@@ -1,6 +1,6 @@
 # conjurer.nvim
 
-**[conjure.vim.pro](https://conjure.vim.pro)** · `:h conjurer`
+**[conjurer.vim.pro](https://conjurer.vim.pro)** · `:h conjurer`
 
 A **conjure verb** for Neovim: `~{motion}` targets some text, prompts you for
 an intent, sends the text to your configured LLM, and splices the result back
