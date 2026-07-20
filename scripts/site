@@ -1,0 +1,17 @@
+#!/bin/sh
+# Serve the docs site locally: scripts/site [port]
+set -eu
+
+port="${1:-4173}"
+root="$(cd "$(dirname "$0")/.." && pwd)/docs"
+
+# Prefer system python3: version-manager shims (asdf, etc.) can fail when no
+# local version is pinned.
+if [ -x /usr/bin/python3 ]; then
+  py=/usr/bin/python3
+else
+  py=python3
+fi
+
+echo "serving $root at http://localhost:$port"
+exec "$py" -m http.server "$port" -d "$root"
