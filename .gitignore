@@ -1,0 +1,5 @@
+# Generated Vim helptags
+doc/tags
+
+# Editor / tooling state
+.claude/
