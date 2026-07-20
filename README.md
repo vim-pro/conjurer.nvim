@@ -1,5 +1,7 @@
 # conjurer.nvim
 
+[![CI](https://github.com/vim-pro/conjurer.nvim/actions/workflows/ci.yml/badge.svg)](https://github.com/vim-pro/conjurer.nvim/actions/workflows/ci.yml)
+
 **[conjurer.vim.pro](https://conjurer.vim.pro)** · `:h conjurer`
 
 A **conjure verb** for Neovim: `~{motion}` targets some text, prompts you for

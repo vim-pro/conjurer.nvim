@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (neovim ${{ matrix.neovim-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        neovim-version: [stable, nightly]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: ${{ matrix.neovim-version }}
+
+      # Nightly tracks Neovim's unreleased HEAD, so a break there can be an
+      # upstream regression rather than a bug in this plugin. Keep it
+      # visible without blocking merges on stable.
+      - name: Run test suite
+        continue-on-error: ${{ matrix.neovim-version == 'nightly' }}
+        run: ./scripts/test
