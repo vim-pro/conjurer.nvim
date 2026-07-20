@@ -1,0 +1,8 @@
+#!/bin/sh
+# Stand-in for a narration-protocol LLM CLI: narrates one line, then returns
+# the snippet upcased inside the RESULT markers.
+tr '[:lower:]' '[:upper:]' | awk '
+/^<<<SNIPPET$/ { insnippet = 1; print "planning the transmutation"; print "<<<RESULT"; next }
+/^SNIPPET$/    { if (insnippet) { insnippet = 0; print "RESULT" }; next }
+insnippet      { print }
+'

@@ -1,0 +1,13 @@
+#!/bin/sh
+# Run every headless spec: scripts/test [pattern]
+set -u
+root="$(cd "$(dirname "$0")/.." && pwd)"
+pattern="${1:-}"
+fail=0
+for spec in "$root"/tests/*_spec.lua; do
+  case "$spec" in *"$pattern"*) ;; *) continue ;; esac
+  printf '== %s\n' "$(basename "$spec")"
+  nvim --headless -u NONE -l "$spec" || fail=1
+  printf '\n'
+done
+exit "$fail"
