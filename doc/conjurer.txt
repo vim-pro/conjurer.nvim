@@ -1,0 +1,339 @@
+*conjurer.txt*       Conjure a change over a motion with an LLM intent
+
+Author:  w0zro
+License: MIT (see |conjurer-license|)
+
+==============================================================================
+CONTENTS                                                   *conjurer-contents*
+
+  1. Introduction ................................ |conjurer-introduction|
+  2. Usage ....................................... |conjurer-usage|
+  3. Mappings .................................... |conjurer-mappings|
+  4. Narration and locking ....................... |conjurer-narration|
+  5. Repeating with . ............................ |conjurer-repeat|
+  6. Registers as intents ........................ |conjurer-registers|
+  7. Commands .................................... |conjurer-commands|
+  8. Configuration ............................... |conjurer-configuration|
+  9. Providers ................................... |conjurer-providers|
+ 10. Vim idioms .................................. |conjurer-idioms|
+ 11. Highlights .................................. |conjurer-highlights|
+ 12. Privacy ..................................... |conjurer-privacy|
+ 13. Health ...................................... |conjurer-health|
+ 14. License ..................................... |conjurer-license|
+
+==============================================================================
+1. INTRODUCTION                                        *conjurer-introduction*
+
+Conjurer adds a **conjure** |operator| that transforms text with a
+natural-language intent. Target text with any motion or text object,
+describe the change, and the replacement is spliced in asynchronously:
+>
+    ~ip         target the inner paragraph
+    Conjure: convert to a pure function<CR>
+<
+The motion comes first, then the intent prompt — so `~ip` feels exactly like
+`dip` or `g~ip`: pick the target, then cast.
+
+While the request is in flight the region is locked and the model's own
+narration streams into it as virtual lines — see |conjurer-narration|. The
+editor is never blocked.
+
+Why the `~` key? Vim itself considers `~` an operator: the built-in
+'tildeop' option exists solely to turn `~` into `~{motion}`. Its stock
+behavior (toggle case) is fully covered by |g~|, |gu| and |gU|, so nothing
+is lost — conjurer upgrades the transformation the key already carries,
+from "flip case" to "apply intent".
+
+==============================================================================
+2. USAGE                                                      *conjurer-usage*
+
+Call the setup function once (all arguments optional, see
+|conjurer-configuration|):
+>lua
+    require("conjurer").setup()
+<
+Then, over any motion:
+
+    `~ip`    conjure over the inner paragraph
+    `~i{`    conjure inside braces
+    `~3j`    conjure this line and the next three
+    `2~j`    same — counts multiply into the motion, like |d| or |c|
+    `~~`     conjure the current line (doubling, like |dd| / |yy|)
+    `3~~`    conjure three lines
+    `v~`     conjure the visual selection
+    `~Vip`   forced linewise, see |o_V|
+
+After the motion, the prompt appears. Type the intent and press <CR>; abort
+with <Esc>. The prompt is |input()|-backed, so <Up> recalls previous
+intents.
+
+Undo: each conjure is a single undo step — |u| un-conjures.
+
+==============================================================================
+3. MAPPINGS                                                *conjurer-mappings*
+
+Default mappings (all configurable, see |conjurer-configuration|):
+
+                                                                 *conjurer-~*
+~{motion}               Conjure over {motion}. Prompts for an intent after
+                        the motion. With a register prefix, see
+                        |conjurer-registers|. Blockwise motions are not
+                        supported.
+
+                                                                *conjurer-~~*
+~~                      Conjure over [count] lines, like |dd|.
+
+                                                               *conjurer-v_~*
+{Visual}~               Conjure over the selection (characterwise or
+                        linewise).
+
+The stock behavior of `~` remains available as |g~|, |gu|, |gU|, |v_u| and
+|v_U| — e.g. `g~l` flips the case of the character under the cursor.
+
+==============================================================================
+4. NARRATION AND LOCKING                                  *conjurer-narration*
+
+While a conjure is in flight:
+
+- The target region is highlighted with |hl-ConjurerPending| and **locked**:
+  any edit that changes text inside it is immediately reverted (a warning
+  points to |:ConjureCancel|). Everything outside the region stays fully
+  editable.
+
+- The model narrates what it is doing, and the narration streams into the
+  region as virtual lines (|hl-ConjurerNarration|): >
+
+    local function fetch_user(id)          ← dimmed, locked
+     ✨ conjuring: add error handling
+        · wrapping the decode in a pcall
+      local res = http.get("/users/" .. id)
+      ...
+<
+- When the replacement lands, the narration disappears, the text is spliced
+  in as a single undo step, and the new text flashes briefly.
+
+Narration requires a provider that streams (the default CLI and API
+providers both do). Set `narration = false` in |conjurer.setup()| to show
+only the pending header. Nothing is written to the buffer until the final
+splice — cancelling leaves the file byte-identical.
+
+==============================================================================
+5. REPEATING WITH .                                          *conjurer-repeat*
+
+The intent is captured once, when the operator is invoked. |.| replays the
+operator over a new target without prompting — the stored intent is reused:
+>
+    ~ip         prompt: "convert to a pure function"
+    }           move to the next paragraph
+    .           same intent conjured here, no prompt
+<
+Counts compose with the repeat as usual: `3.` repeats over three lines when
+the original was linewise.
+
+==============================================================================
+6. REGISTERS AS INTENTS                                   *conjurer-registers*
+
+A named register given before the operator supplies the intent, and no
+prompt is shown:
+>
+    :let @r = "add type hints"
+    "r~ip
+<
+Registers make intents first-class Vim objects: yank an intent from a
+buffer (`"ryy`), persist favorites in |shada|, or cast inside a |macro|.
+Dot-repeat after a register invocation reuses that register's intent as it
+was at cast time.
+
+The unnamed register (`""`) is ignored — a bare `~` always prompts.
+
+==============================================================================
+7. COMMANDS                                                *conjurer-commands*
+
+                                                                   *:Conjure*
+:[range]Conjure {intent}
+                        Conjure over [range] (default: current line) with
+                        {intent} given inline: >
+                            :'<,'>Conjure add error handling
+<
+:[range]Conjure         With no argument, reuse the most recent intent —
+                        the way |:&&| reuses the last |:substitute|.
+
+                                                             *:ConjureCancel*
+:ConjureCancel          Cancel every in-flight conjure in the current
+                        buffer: the request is killed, the lock and
+                        narration are removed, and the buffer is left
+                        exactly as it was.
+
+==============================================================================
+8. CONFIGURATION                                      *conjurer-configuration*
+
+setup({opts})                                               *conjurer.setup()*
+
+Defaults: >lua
+
+    require("conjurer").setup({
+      -- "auto" prefers a local CLI (`claude -p`), falls back to the API.
+      -- Also: "cli", "anthropic", any module under lua/conjurer/providers/,
+      -- or a function(request, callback).
+      provider = "auto",
+
+      -- Model for both the CLI (--model flag) and the API (request body).
+      model = "claude-opus-4-8",
+
+      -- Command for the "cli" provider. nil means the Claude Code CLI in
+      -- streaming print mode:
+      --   claude -p --model <model> --output-format stream-json
+      --     --include-partial-messages --verbose
+      -- A custom command owns its own flags; conjurer pipes the prompt to
+      -- stdin and reads stdout.
+      cli_cmd = nil,
+
+      -- Environment variable holding the API key ("anthropic" provider).
+      api_key_env = "ANTHROPIC_API_KEY",
+
+      -- Max output tokens ("anthropic" provider).
+      max_tokens = 16000,
+
+      -- Adaptive thinking: better transforms, more latency ("anthropic").
+      thinking = true,
+
+      -- Lines of surrounding buffer context sent with each request.
+      context_lines = 40,
+
+      -- Stream the model's narration into the pending region.
+      narration = true,
+
+      -- Flash the conjured text when it lands (like the |on_yank|
+      -- highlight). Milliseconds; false or 0 disables.
+      flash_ms = 150,
+      flash_hl = "IncSearch",
+
+      -- Set either to false to skip that mapping.
+      keymaps = {
+        operator = "~",   -- normal: ~{motion}, visual: ~
+        line = "~~",      -- current line
+      },
+
+      -- Replace the built-in system prompt entirely (string), or nil.
+      system_prompt = nil,
+    })
+<
+==============================================================================
+9. PROVIDERS                                              *conjurer-providers*
+
+                                                      *conjurer-provider-auto*
+"auto" (the default) resolves at cast time: if the CLI command's executable
+is found, the "cli" provider is used; otherwise "anthropic".
+
+                                                       *conjurer-provider-cli*
+"cli" runs a local command — by default the Claude Code CLI in streaming
+print mode, riding your existing Claude Code auth (no API key needed).
+Because it is Claude Code, it may read project context (e.g. CLAUDE.md)
+and has a cold-start cost of a few seconds per cast.
+
+Any command works, and a custom `cli_cmd` owns all of its own flags: >lua
+
+    require("conjurer").setup({
+      provider = "cli",
+      cli_cmd = { "ollama", "run", "qwen2.5-coder" },
+    })
+<
+A custom command's stdout is treated as a plain text stream: if the model
+follows the narration protocol (see below) narration works; otherwise the
+whole output is the replacement.
+
+                                                 *conjurer-provider-anthropic*
+"anthropic" calls the Anthropic Messages API directly via curl with SSE
+streaming. Requires an API key in the environment variable named by
+`api_key_env`.
+
+                                                  *conjurer-provider-function*
+A function receives the request and a callback, so any backend works: >lua
+
+    require("conjurer").setup({
+      provider = function(request, callback)
+        -- request: {
+        --   config, intent, filetype, text,
+        --   context_before, context_after,
+        --   on_narrate,   -- optional fun(line): stream narration lines
+        -- }
+        -- Call callback exactly once, on the main loop:
+        callback(nil, transformed_text)   -- or callback("error message")
+        -- Optionally return a handle to support :ConjureCancel:
+        return { cancel = function() --[[ abort the request ]] end }
+      end,
+    })
+<
+                                                   *conjurer-provider-protocol*
+The built-in providers instruct the model to respond as: >
+
+    one to three short narration lines
+    <<<RESULT
+    the replacement text
+    RESULT
+<
+Narration lines stream to `on_narrate`; the RESULT block becomes the
+replacement. If the markers never appear, the entire output is used as the
+replacement — so protocol-unaware models still work, just without useful
+narration.
+
+==============================================================================
+10. VIM IDIOMS                                               *conjurer-idioms*
+
+Conjurer aims to behave like a native operator in every detail:
+
+- Counts scale the motion: `2~j`, `3~~` — like `2dj`, `3dd`.
+- |.| repeats the last conjure, intent included. See |conjurer-repeat|.
+- Registers hold intents: `"r~ip`. See |conjurer-registers|.
+- |'[| and |']| are set around the conjured text when the async replacement
+  lands, so `` `[ ``, `` `] `` and chained operators over the result work.
+- The result flashes briefly on arrival — the |on_yank| idiom as an async
+  completion signal.
+- |:Conjure| with no argument reuses the last intent, like |:&&|.
+- The prompt keeps |input()| history: <Up> recalls previous intents.
+- Forced motion types work: `~Vip` (|o_V|), `~vj` (|o_v|).
+- 'nomodifiable' and 'readonly' buffers are refused before any request.
+- One conjure is one undo step.
+
+One deliberate deviation: native operators move the cursor to the start of
+the changed text. Conjurer's change lands asynchronously — possibly while
+you are typing elsewhere — so the cursor is never moved. Jump to the result
+yourself with `` `[ ``.
+
+==============================================================================
+11. HIGHLIGHTS                                           *conjurer-highlights*
+
+                                                          *hl-ConjurerPending*
+ConjurerPending         The locked region while a conjure is in flight.
+                        Default: links to |hl-Comment|.
+
+                                                        *hl-ConjurerNarration*
+ConjurerNarration       The narration virtual lines.
+                        Default: links to DiagnosticVirtualTextInfo.
+
+The completion flash uses the `flash_hl` config option (default
+|hl-IncSearch|).
+
+==============================================================================
+12. PRIVACY                                                 *conjurer-privacy*
+
+Every cast sends the targeted snippet, the surrounding context
+(`context_lines` lines each side), the filetype, and your intent to the
+configured provider — a local process for "cli", Anthropic's API for
+"anthropic", or wherever your custom provider points. Do not conjure over
+buffers whose content must not leave your machine unless your provider is
+one you control.
+
+==============================================================================
+13. HEALTH                                                   *conjurer-health*
+
+Run |:checkhealth| conjurer to verify the environment: Neovim version,
+which provider "auto" resolves to, presence of the CLI executable and curl,
+and whether the API key variable is set.
+
+==============================================================================
+14. LICENSE                                                 *conjurer-license*
+
+MIT. See the LICENSE file in the repository root.
+
+vim:tw=78:ts=8:noet:ft=help:norl:

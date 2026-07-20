@@ -1,0 +1,122 @@
+local M = {}
+
+---@class conjurer.Request
+---@field config conjurer.Config
+---@field intent string Natural-language instruction for the transform.
+---@field filetype string 'filetype' of the target buffer ("" if unset).
+---@field text string The snippet to transform.
+---@field context_before string Buffer text preceding the snippet.
+---@field context_after string Buffer text following the snippet.
+---@field on_narrate fun(line: string)? Call with each narration line as it streams (main loop only).
+
+---@class conjurer.Handle
+---@field cancel fun() Abort the in-flight request.
+
+---@alias conjurer.Callback fun(err: string?, result: string?) Call exactly once, on the main loop.
+---@alias conjurer.Provider fun(request: conjurer.Request, callback: conjurer.Callback): conjurer.Handle?
+
+---@class conjurer.Keymaps
+---@field operator string|false Operator key (normal + visual). Default "~".
+---@field line string|false Current-line key. Default "~~".
+
+---@class conjurer.Config
+---@field provider "auto"|"cli"|"anthropic"|string|conjurer.Provider
+---@field model string
+---@field cli_cmd string[]? Full CLI command; nil = claude print-mode with streaming.
+---@field api_key_env string
+---@field max_tokens integer
+---@field thinking boolean
+---@field context_lines integer
+---@field narration boolean
+---@field flash_ms integer|false
+---@field flash_hl string
+---@field keymaps conjurer.Keymaps
+---@field system_prompt string?
+
+---@type conjurer.Config
+M.config = {
+  -- "auto" prefers a local CLI (`claude -p`) and falls back to the API.
+  -- Also accepts "cli", "anthropic", any module name under
+  -- lua/conjurer/providers/, or a function(request, callback).
+  provider = "auto",
+  model = "claude-opus-4-8",
+  -- Local command for the "cli" provider. nil means the Claude Code CLI in
+  -- streaming print mode. A custom command owns its own flags; conjurer
+  -- pipes the prompt to stdin and reads stdout.
+  cli_cmd = nil,
+  api_key_env = "ANTHROPIC_API_KEY",
+  max_tokens = 16000,
+  -- Adaptive thinking improves transform quality at some latency cost.
+  thinking = true,
+  -- Lines of surrounding buffer context sent with each request.
+  context_lines = 40,
+  -- Stream the model's narration into the pending region as virtual lines.
+  narration = true,
+  -- Flash the conjured text when it lands (like the on_yank highlight).
+  -- Milliseconds; false or 0 disables.
+  flash_ms = 150,
+  flash_hl = "IncSearch",
+  -- Set any of these to false to skip that mapping.
+  keymaps = {
+    operator = "~", -- normal: ~{motion}, visual: ~
+    line = "~~", -- current line
+  },
+  -- Override the built-in system prompt (string), or nil for the default.
+  system_prompt = nil,
+}
+
+--- Merge user options into the defaults, define keymaps and commands.
+---@param opts conjurer.Config? Partial configuration; omitted keys keep defaults.
+function M.setup(opts)
+  M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+
+  local operator = require("conjurer.operator")
+  local maps = M.config.keymaps or {}
+
+  if maps.operator then
+    vim.keymap.set("n", maps.operator, operator.arm(), {
+      expr = true,
+      desc = "Conjure a change over a motion",
+    })
+    vim.keymap.set("x", maps.operator, operator.arm(), {
+      expr = true,
+      desc = "Conjure a change over the selection",
+    })
+  end
+  if maps.line then
+    vim.keymap.set("n", maps.line, operator.arm("_"), {
+      expr = true,
+      desc = "Conjure a change over the current line",
+    })
+  end
+
+  vim.api.nvim_create_user_command("Conjure", function(cmd)
+    operator.run_range(cmd.line1, cmd.line2, cmd.args)
+  end, {
+    nargs = "*",
+    range = true,
+    desc = "Conjure a change over a range (no argument reuses the last intent)",
+  })
+
+  vim.api.nvim_create_user_command("ConjureCancel", function()
+    operator.cancel()
+  end, {
+    desc = "Cancel all in-flight conjures in this buffer",
+  })
+end
+
+--- Resolve the configured provider to a request function.
+---@return conjurer.Provider
+function M.get_provider()
+  local provider = M.config.provider
+  if type(provider) == "function" then
+    return provider
+  end
+  if provider == "auto" then
+    local exe = require("conjurer.providers.cli").command(M.config)[1]
+    provider = vim.fn.executable(exe) == 1 and "cli" or "anthropic"
+  end
+  return require("conjurer.providers." .. provider).request
+end
+
+return M
