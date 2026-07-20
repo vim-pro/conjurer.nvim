@@ -89,7 +89,10 @@ nav {
   position: absolute; inset: 0; pointer-events: none;
   background: radial-gradient(ellipse 60% 45% at 50% 0%, rgba(124,90,220,0.22), rgba(124,90,220,0) 70%);
 }
-#heroFx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+/* Fixed to the viewport (not .hero) and sunk behind everything via a
+   negative z-index, so the ambient dust/wisps/streaks read as a page-wide
+   backdrop instead of clipping to the hero's own height. */
+#heroFx { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -1; pointer-events: none; }
 .star { position: absolute; border-radius: 50%; animation: cjshimmer var(--tw, 4s) ease-in-out var(--d, 0s) infinite; }
 .hero > .rel { position: relative; }
 .eyebrow {
@@ -276,6 +279,7 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
 </style>
 </head>
 <body>
+<canvas id="heroFx" aria-hidden="true"></canvas>
 <div class="shell">
 
 <nav>
@@ -293,7 +297,6 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
 
 <header class="hero">
   <div class="hero-glow"></div>
-  <canvas id="heroFx" aria-hidden="true"></canvas>
   <div class="star" style="left:14%; top:18%; width:3px; height:3px; background:#d8b45a; opacity:.7; --tw:3s;"></div>
   <div class="star" style="left:26%; top:52%; width:2px; height:2px; background:#e9e4f2; opacity:.5; --tw:4s; --d:1s;"></div>
   <div class="star" style="right:18%; top:24%; width:2px; height:2px; background:#e9e4f2; opacity:.5; --tw:3.5s; --d:.5s;"></div>
