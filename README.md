@@ -92,8 +92,33 @@ lazy.nvim:
 ```lua
 {
   "vim-pro/conjurer.nvim",
+  version = "*", -- pin to tagged releases; omit to track main
   opts = {},
 }
+```
+
+packer.nvim:
+
+```lua
+use({
+  "vim-pro/conjurer.nvim",
+  config = function() require("conjurer").setup() end,
+})
+```
+
+vim-plug:
+
+```vim
+Plug 'vim-pro/conjurer.nvim'
+" after plug#end():
+" lua require("conjurer").setup()
+```
+
+mini.deps:
+
+```lua
+require("mini.deps").add("vim-pro/conjurer.nvim")
+require("conjurer").setup()
 ```
 
 Requires Neovim 0.10+. The default provider prefers the local `claude` CLI
