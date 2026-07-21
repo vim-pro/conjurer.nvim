@@ -61,7 +61,7 @@ code { font-family: var(--mono); }
    design width. The padding trick keeps backgrounds/borders full-bleed
    without wrapping every section in an extra div. */
 .shell { width: 100%; }
-nav, .hero, .laws, .circle-sect, .cta {
+nav, .hero, .laws, .familiars, .circle-sect, .cta {
   padding-inline: max(48px, calc((100% - 1120px) / 2 + 48px));
 }
 .scry { padding-inline: max(24px, calc((100% - 1120px) / 2 + 88px)); }
@@ -191,10 +191,10 @@ h1 em { font-style: italic; color: var(--gold); }
 
 /* ---------- laws ---------- */
 .laws { padding-block: 64px 24px; }
-.laws-head { text-align: center; margin-bottom: 40px; }
+.section-head { text-align: center; margin-bottom: 40px; }
 h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacing: -.01em; }
-.laws-head .s { margin-top: 8px; font-size: 14px; color: var(--faint); }
-.law-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.section-head .s { margin-top: 8px; font-size: 14px; color: var(--faint); }
+.law-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
 .law {
   border: 1px solid var(--hairline); border-radius: 12px; padding: 26px;
   background: linear-gradient(180deg, rgba(183,157,247,0.05), rgba(183,157,247,0));
@@ -203,6 +203,10 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
 .law .t { font-weight: 600; font-size: 17px; margin-bottom: 8px; }
 .law .b { font-size: 14px; line-height: 1.6; color: var(--muted); }
 .law .b code { color: var(--text); }
+
+/* ---------- familiars (providers) ---------- */
+.familiars { padding-block: 48px 64px; }
+.familiar-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; max-width: 820px; margin: 0 auto; }
 
 /* ---------- spell circle ---------- */
 .circle-sect { padding-block: 72px 64px; text-align: center; }
@@ -251,7 +255,7 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
 
 /* ---------- responsive ---------- */
 @media (max-width: 900px) {
-  nav, .hero, .scry, .laws, .circle-sect, .cta { padding-inline: 24px; }
+  nav, .hero, .scry, .laws, .familiars, .circle-sect, .cta { padding-inline: 24px; }
   nav { padding-block: 16px; }
   .nav-links .optional { display: none; }
   .hero { padding-block: 64px 48px; }
@@ -261,11 +265,10 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
   .scry { padding-block: 16px 24px; }
   .laws { padding-block: 48px 16px; }
   .law-grid { grid-template-columns: 1fr; }
+  .familiars { padding-block: 32px 48px; }
+  .familiar-grid { grid-template-columns: 1fr; }
   .circle-sect { padding-block: 56px 48px; }
   .install-chip { flex-wrap: wrap; justify-content: center; }
-}
-@media (min-width: 901px) and (max-width: 1140px) {
-  .law-grid { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 520px) {
   .ritual-pill { display: none; }
@@ -295,7 +298,7 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
   </a>
   <div class="nav-links">
     <a class="optional" href="https://github.com/vim-pro/conjurer.nvim/blob/main/doc/conjurer.txt">The grimoire <span class="h">(:h conjurer)</span></a>
-    <a class="optional" href="#laws">Familiars</a>
+    <a class="optional" href="#familiar">Familiars</a>
     <a href="https://github.com/vim-pro/conjurer.nvim">GitHub</a>
     <a class="ritual-pill" href="#summoning">✦ begin the ritual</a>
   </div>
@@ -365,7 +368,7 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
 </section>
 
 <section class="laws" id="laws">
-  <div class="laws-head">
+  <div class="section-head">
     <h2>The laws of casting</h2>
     <div class="s">deep Vim fidelity is the whole discipline</div>
   </div>
@@ -382,10 +385,19 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
     <div class="law"><div class="kick">Fourth law</div><div class="t">A counterspell costs nothing</div>
       <div class="b">Nothing touches the buffer until the final splice.
       <code>:ConjureCancel</code> always leaves the file byte-identical.</div></div>
-    <div class="law"><div class="kick">Fifth law</div><div class="t">Choose your familiar</div>
+  </div>
+</section>
+
+<section class="familiars" id="familiar">
+  <div class="section-head">
+    <h2>Familiars</h2>
+    <div class="s">bring your own — local, hosted, or homemade</div>
+  </div>
+  <div class="familiar-grid">
+    <div class="law"><div class="kick">The bond</div><div class="t">Choose your familiar</div>
       <div class="b">Claude CLI by default, the API with a key, <code>ollama</code>, or any
       Lua function — the provider protocol is 20 lines.</div></div>
-    <div class="law"><div class="kick">Sixth law</div><div class="t">Ward what is precious</div>
+    <div class="law"><div class="kick">The ward</div><div class="t">Ward what is precious</div>
       <div class="b">Every cast sends the snippet and context to your provider. Keep secret
       buffers behind a local familiar you control.</div></div>
   </div>
