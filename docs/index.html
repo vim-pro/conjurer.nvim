@@ -607,15 +607,36 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
     });
   }
   var streaks = [];
-  var nextStreak = rnd(1.0, 2.5);
+  var nextStreak = rnd(0.8, 2.0); // 25% more often than the original 1.0-2.5s gap
   function spawnStreak() {
     var fromLeft = Math.random() < 0.5;
+    var baseAngle = (fromLeft ? 0 : Math.PI) + rnd(-0.12, 0.12);
     streaks.push({
       x: fromLeft ? -0.05 : 1.05, y: rnd(0.15, 0.75),
-      vx: (fromLeft ? 1 : -1) * rnd(0.28, 0.45), vy: rnd(-0.06, 0.06),
-      curve: rnd(-0.15, 0.15),
-      life: 0, max: rnd(1.4, 2.2),
+      angle: baseAngle, speed: rnd(0.3, 0.42),
+      // two summed sine waves at different frequencies so the heading
+      // wanders organically instead of on one metronomic beat
+      w1f: rnd(1.2, 2.1), w1a: rnd(0.5, 1.0), w1p: rnd(0, Math.PI * 2),
+      w2f: rnd(3.0, 4.6), w2a: rnd(0.25, 0.5), w2p: rnd(0, Math.PI * 2),
+      // one loop-the-loop flourish partway through the flight
+      curlAt: rnd(0.35, 0.7), curled: false, curlT: 0,
+      curlDur: rnd(0.4, 0.6), curlDir: Math.random() < 0.5 ? 1 : -1,
+      sparkTimer: rnd(0.15, 0.4),
+      life: 0, max: rnd(2.25, 3.25), // 25% longer-lived than the original 1.8-2.6s
       trail: [], c: Math.random() < 0.5 ? GOLD : VIOLET,
+    });
+  }
+
+  var sparks = [];
+  function spawnSpark(x, y, awayAngle, color) {
+    if (sparks.length > 140) sparks.shift();
+    var a = awayAngle + rnd(-1.1, 1.1);
+    var sp = rnd(0.12, 0.4);
+    sparks.push({
+      x: x, y: y,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      life: 0, max: rnd(0.3, 0.65),
+      r: rnd(0.6, 1.5), c: color,
     });
   }
 
@@ -644,15 +665,53 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
 
     // streaks
     nextStreak -= dt;
-    if (nextStreak <= 0 && streaks.length < 3) { spawnStreak(); nextStreak = rnd(2.5, 5.5); }
+    if (nextStreak <= 0 && streaks.length < 3) { spawnStreak(); nextStreak = rnd(2.0, 4.4); } // 25% more often than 2.5-5.5s
     for (var s = streaks.length - 1; s >= 0; s--) {
       var st = streaks[s];
       st.life += dt;
-      st.vy += st.curve * dt * 0.5;
-      st.x += st.vx * dt; st.y += st.vy * dt;
+      var lifeFrac = st.life / st.max;
+
+      // organic heading wobble so the path snakes instead of flying straight
+      var wobble = st.w1a * Math.sin(tt * st.w1f + st.w1p) + st.w2a * Math.sin(tt * st.w2f + st.w2p);
+      var angVel = wobble * 1.6;
+
+      // one magical loop-the-loop partway through the flight, sparks popping
+      // off the moment it kicks in
+      var inCurl = !st.curled && lifeFrac >= st.curlAt;
+      if (inCurl) {
+        if (st.curlT === 0) {
+          for (var b = 0; b < 8; b++) spawnSpark(st.x, st.y, st.angle + Math.PI, st.c);
+        }
+        st.curlT += dt;
+        var curlProg = st.curlT / st.curlDur;
+        angVel += st.curlDir * 22 * (1 - curlProg); // fast spin, eased out
+        if (curlProg >= 1) st.curled = true;
+      }
+      st.angle += angVel * dt;
+
+      // speed breathes on its own cycle, and surges through the loop
+      var speedMul = 1 + 0.22 * Math.sin(tt * 1.4 + st.w1p) + (inCurl ? 0.5 : 0);
+      var v = st.speed * speedMul;
+      // stashed for the wisps' "swirl near a passing streak" reaction below
+      st.vx = Math.cos(st.angle) * v; st.vy = Math.sin(st.angle) * v;
+      st.x += st.vx * dt;
+      st.y += st.vy * dt;
+
       st.trail.push([st.x, st.y]);
-      if (st.trail.length > 26) st.trail.shift();
-      var fade = Math.max(0, 1 - st.life / st.max);
+      if (st.trail.length > 30) st.trail.shift();
+
+      // twinkly brightness on top of the overall lifetime fade, plus a
+      // brighter flash while looping
+      var glow = 0.75 + 0.25 * Math.sin(tt * 6 + st.w2p) + (inCurl ? 0.4 * (1 - st.curlT / st.curlDur) : 0);
+      var fade = Math.max(0, 1 - lifeFrac) * glow;
+
+      // a stray spark now and then, independent of the loop flourish
+      st.sparkTimer -= dt;
+      if (st.sparkTimer <= 0) {
+        spawnSpark(st.x, st.y, st.angle + Math.PI, st.c);
+        st.sparkTimer = rnd(0.35, 0.85);
+      }
+
       for (var q = 0; q < st.trail.length; q++) {
         var p = st.trail[q], fa = (q / st.trail.length) * fade * 0.5;
         ctx.fillStyle = rgba(st.c, fa);
@@ -660,7 +719,7 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
       }
       var hx = st.x * W, hy = st.y * H;
       ctx.save();
-      ctx.shadowBlur = 14; ctx.shadowColor = rgba(st.c, 0.9 * fade);
+      ctx.shadowBlur = 14 * (0.7 + 0.3 * glow); ctx.shadowColor = rgba(st.c, 0.9 * fade);
       ctx.fillStyle = "rgba(255,252,240," + fade + ")";
       ctx.beginPath(); ctx.arc(hx, hy, 2.4, 0, 7); ctx.fill();
       ctx.restore();
@@ -671,9 +730,21 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
       ctx.moveTo(hx - sp, hy); ctx.lineTo(hx + sp, hy);
       ctx.moveTo(hx, hy - sp); ctx.lineTo(hx, hy + sp);
       ctx.stroke();
-      if (st.life > st.max || st.x < -0.1 || st.x > 1.1 || st.y < -0.1 || st.y > 1.1) {
+      if (st.life > st.max || st.x < -0.15 || st.x > 1.15 || st.y < -0.15 || st.y > 1.15) {
         streaks.splice(s, 1);
       }
+    }
+
+    // sparks (short-lived flecks flung off the streaks)
+    for (var k = sparks.length - 1; k >= 0; k--) {
+      var sk = sparks[k];
+      sk.life += dt;
+      sk.x += sk.vx * dt; sk.y += sk.vy * dt;
+      sk.vx *= (1 - 1.6 * dt); sk.vy *= (1 - 1.6 * dt);
+      if (sk.life > sk.max) { sparks.splice(k, 1); continue; }
+      var sa = 1 - sk.life / sk.max;
+      ctx.fillStyle = rgba(sk.c, sa * 0.9);
+      ctx.beginPath(); ctx.arc(sk.x * W, sk.y * H, sk.r, 0, 7); ctx.fill();
     }
 
     // wisps (react to streak heads)
