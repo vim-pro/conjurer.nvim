@@ -21,6 +21,9 @@ It is a real Vim operator, so it composes with everything you already know:
 | `~` (visual) | conjure the selection |
 | `:'<,'>Conjure add error handling` | conjure a range with an inline intent |
 | `:ConjureCancel` | abort everything in flight in this buffer |
+| `:ConjureAccept` | apply the reviewed result and close the diff |
+| `:ConjureReject` | discard the reviewed result and close the diff |
+| `:ConjureRetry {feedback}` | re-conjure the reviewed region with feedback |
 
 The motion comes first, then the intent prompt — so `~ip` feels exactly like
 `dip` or `g~ip`: pick the target, then cast.
@@ -50,6 +53,23 @@ local function fetch_user(id)          ← dimmed, locked
 Nothing touches the buffer until the final splice, so `:ConjureCancel` always
 leaves the file byte-identical — and the finished conjure is still a single
 undo step.
+
+## Reviewing before applying
+
+Set `review = true` and a finished conjure opens a native two-way diff (a new
+tabpage, `:diffthis` on both sides) instead of auto-applying — `]c`/`[c`/
+`do`/`dp` all work natively. The source region stays locked until you decide:
+
+```
+:ConjureAccept              splice in the right-hand buffer's current
+                             content and close the diff
+:ConjureReject               discard the draft, buffer untouched
+:ConjureRetry fix the edge case   send the draft + feedback back to the
+                             model, which revises rather than starting over
+```
+
+Closing the diff yourself without running one of those (`:tabclose`, etc.) is
+treated as a reject — nothing is written.
 
 ## Bottled Vim idioms
 
@@ -149,6 +169,7 @@ require("conjurer").setup({
     line = "~~",
   },
   system_prompt = nil,             -- string to override the built-in prompt
+  review = false,                  -- review results in a diff before applying
 })
 ```
 

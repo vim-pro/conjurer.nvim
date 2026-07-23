@@ -22,6 +22,12 @@ Rules for the replacement:
 - Never include the surrounding context.
 - If the intent cannot be applied to this snippet, return the snippet
   unchanged inside the RESULT block.
+
+If a "Your previous attempt" and "Feedback on that attempt" section are
+present, the user rejected that attempt for the stated reason(s). Revise
+it according to the feedback rather than starting over from the original
+snippet — keep whatever the feedback doesn't ask you to change. Respond
+with the same narrate / <<<RESULT / RESULT shape as any other cast.
 ]]
 
 function M.system(config)
@@ -30,7 +36,7 @@ end
 
 ---@param request conjurer.Request
 function M.user(request)
-  return table.concat({
+  local lines = {
     "Filetype: " .. (request.filetype ~= "" and request.filetype or "unknown"),
     "",
     "Context before the snippet:",
@@ -47,9 +53,24 @@ function M.user(request)
     "<<<SNIPPET",
     request.text,
     "SNIPPET",
-    "",
-    "Intent: " .. request.intent,
-  }, "\n")
+  }
+  if request.previous_attempt then
+    vim.list_extend(lines, {
+      "",
+      "Your previous attempt (rejected by the user):",
+      "<<<PREVIOUS_ATTEMPT",
+      request.previous_attempt,
+      "PREVIOUS_ATTEMPT",
+      "",
+      "Feedback on that attempt:",
+      "<<<FEEDBACK",
+      request.feedback,
+      "FEEDBACK",
+    })
+  end
+  table.insert(lines, "")
+  table.insert(lines, "Intent: " .. request.intent)
+  return table.concat(lines, "\n")
 end
 
 -- Models sometimes fence output despite instructions; strip a single

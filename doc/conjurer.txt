@@ -10,16 +10,17 @@ CONTENTS                                                   *conjurer-contents*
   2. Usage ....................................... |conjurer-usage|
   3. Mappings .................................... |conjurer-mappings|
   4. Narration and locking ....................... |conjurer-narration|
-  5. Repeating with . ............................ |conjurer-repeat|
-  6. Registers as intents ........................ |conjurer-registers|
-  7. Commands .................................... |conjurer-commands|
-  8. Configuration ............................... |conjurer-configuration|
-  9. Providers ................................... |conjurer-providers|
- 10. Vim idioms .................................. |conjurer-idioms|
- 11. Highlights .................................. |conjurer-highlights|
- 12. Privacy ..................................... |conjurer-privacy|
- 13. Health ...................................... |conjurer-health|
- 14. License ..................................... |conjurer-license|
+  5. Reviewing results ........................... |conjurer-review|
+  6. Repeating with . ............................ |conjurer-repeat|
+  7. Registers as intents ........................ |conjurer-registers|
+  8. Commands .................................... |conjurer-commands|
+  9. Configuration ............................... |conjurer-configuration|
+ 10. Providers ................................... |conjurer-providers|
+ 11. Vim idioms .................................. |conjurer-idioms|
+ 12. Highlights .................................. |conjurer-highlights|
+ 13. Privacy ..................................... |conjurer-privacy|
+ 14. Health ...................................... |conjurer-health|
+ 15. License ..................................... |conjurer-license|
 
 ==============================================================================
 1. INTRODUCTION                                        *conjurer-introduction*
@@ -118,7 +119,39 @@ only the pending header. Nothing is written to the buffer until the final
 splice — cancelling leaves the file byte-identical.
 
 ==============================================================================
-5. REPEATING WITH .                                          *conjurer-repeat*
+5. REVIEWING RESULTS                                          *conjurer-review*
+
+With `review = true`, a finished conjure does not splice in automatically —
+it opens a native two-way diff in a new tabpage instead: the locked snippet
+on the left, the model's proposed replacement on the right, both with
+'diff' set. |]c|, |[c|, |do| and |dp| all work exactly as they would in any
+other diff.
+
+The source region stays locked (see |conjurer-narration|) until you decide:
+
+    :ConjureAccept          splice in the right-hand buffer's current
+                             content and close the diff
+    :ConjureReject           discard the draft, close the diff, buffer
+                             untouched
+    :ConjureRetry {feedback} send the draft and your feedback back to the
+                             model, which revises rather than starting over
+
+Accept applies whatever the right-hand buffer currently holds — if you used
+`do`/`dp` to hand-adjust the diff before accepting, that adjustment is what
+lands. All three commands work from either side of the diff.
+
+Closing the diff yourself (`:tabclose`, `:q` on both panes, etc.) without
+running one of the three commands is treated as a reject: nothing is
+written, and a warning notes the review was discarded.
+
+`:ConjureCancel` run from inside a review closes it (equivalent to reject);
+run from the source buffer, it cancels every in-flight or in-review conjure
+there, same as always.
+
+Off by default — set `review = true` in |conjurer.setup()| to turn it on.
+
+==============================================================================
+6. REPEATING WITH .                                          *conjurer-repeat*
 
 The intent is captured once, when the operator is invoked. |.| replays the
 operator over a new target without prompting — the stored intent is reused:
@@ -131,7 +164,7 @@ Counts compose with the repeat as usual: `3.` repeats over three lines when
 the original was linewise.
 
 ==============================================================================
-6. REGISTERS AS INTENTS                                   *conjurer-registers*
+7. REGISTERS AS INTENTS                                   *conjurer-registers*
 
 A named register given before the operator supplies the intent, and no
 prompt is shown:
@@ -147,7 +180,7 @@ was at cast time.
 The unnamed register (`""`) is ignored — a bare `~` always prompts.
 
 ==============================================================================
-7. COMMANDS                                                *conjurer-commands*
+8. COMMANDS                                                *conjurer-commands*
 
                                                                    *:Conjure*
 :[range]Conjure {intent}
@@ -162,10 +195,26 @@ The unnamed register (`""`) is ignored — a bare `~` always prompts.
 :ConjureCancel          Cancel every in-flight conjure in the current
                         buffer: the request is killed, the lock and
                         narration are removed, and the buffer is left
-                        exactly as it was.
+                        exactly as it was. Run from inside a review, it
+                        cancels just that one. See |conjurer-review|.
+
+                                                             *:ConjureAccept*
+:ConjureAccept          Apply the reviewed result and close the diff. See
+                        |conjurer-review|.
+
+                                                             *:ConjureReject*
+:ConjureReject          Discard the reviewed result and close the diff. See
+                        |conjurer-review|.
+
+                                                              *:ConjureRetry*
+:ConjureRetry {feedback}
+                        Re-conjure the reviewed region, sending {feedback}
+                        and the rejected draft back to the model. With no
+                        argument, prompts for feedback. See
+                        |conjurer-review|.
 
 ==============================================================================
-8. CONFIGURATION                                      *conjurer-configuration*
+9. CONFIGURATION                                      *conjurer-configuration*
 
 setup({opts})                                               *conjurer.setup()*
 
@@ -216,10 +265,14 @@ Defaults: >lua
 
       -- Replace the built-in system prompt entirely (string), or nil.
       system_prompt = nil,
+
+      -- Review the result in a native diff before it's spliced in, instead
+      -- of auto-applying. See |conjurer-review|.
+      review = false,
     })
 <
 ==============================================================================
-9. PROVIDERS                                              *conjurer-providers*
+10. PROVIDERS                                             *conjurer-providers*
 
                                                       *conjurer-provider-auto*
 "auto" (the default) resolves at cast time: if the CLI command's executable
@@ -278,7 +331,7 @@ replacement — so protocol-unaware models still work, just without useful
 narration.
 
 ==============================================================================
-10. VIM IDIOMS                                               *conjurer-idioms*
+11. VIM IDIOMS                                               *conjurer-idioms*
 
 Conjurer aims to behave like a native operator in every detail:
 
@@ -301,7 +354,7 @@ you are typing elsewhere — so the cursor is never moved. Jump to the result
 yourself with `` `[ ``.
 
 ==============================================================================
-11. HIGHLIGHTS                                           *conjurer-highlights*
+12. HIGHLIGHTS                                           *conjurer-highlights*
 
                                                           *hl-ConjurerPending*
 ConjurerPending         The locked region while a conjure is in flight.
@@ -315,7 +368,7 @@ The completion flash uses the `flash_hl` config option (default
 |hl-IncSearch|).
 
 ==============================================================================
-12. PRIVACY                                                 *conjurer-privacy*
+13. PRIVACY                                                 *conjurer-privacy*
 
 Every cast sends the targeted snippet, the surrounding context
 (`context_lines` lines each side), the filetype, and your intent to the
@@ -325,14 +378,14 @@ buffers whose content must not leave your machine unless your provider is
 one you control.
 
 ==============================================================================
-13. HEALTH                                                   *conjurer-health*
+14. HEALTH                                                   *conjurer-health*
 
 Run |:checkhealth| conjurer to verify the environment: Neovim version,
 which provider "auto" resolves to, presence of the CLI executable and curl,
 and whether the API key variable is set.
 
 ==============================================================================
-14. LICENSE                                                 *conjurer-license*
+15. LICENSE                                                 *conjurer-license*
 
 MIT. See the LICENSE file in the repository root.
 

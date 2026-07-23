@@ -26,6 +26,12 @@ local pending_register = nil
 ---@type table[]
 local casts = {}
 
+local next_cast_id = 0
+local function new_id()
+  next_cast_id = next_cast_id + 1
+  return next_cast_id
+end
+
 local NARRATION_LINES = 4
 
 --- Returns an expr-mapping callback that arms the operator. `followup` is
@@ -167,6 +173,9 @@ end
 -- ---------------------------------------------------------------------------
 
 local function narration_virt(cast)
+  if cast.state == "reviewing" then
+    return { { { " 👀 reviewing: " .. cast.intent, "ConjurerNarration" } } }
+  end
   local lines = {
     { { " ✨ conjuring: " .. cast.intent, "ConjurerNarration" } },
   }
@@ -310,9 +319,16 @@ local function ensure_lock(buf)
   })
 end
 
+-- retire() needs to tear down an open review, but the review machinery is
+-- defined further down alongside the rest of accept/reject/retry.
+local close_review
+
 --- Remove a cast's decorations and drop it from the registry.
 local function retire(cast)
   cast.done = true
+  if cast.review then
+    close_review(cast)
+  end
   if vim.api.nvim_buf_is_valid(cast.buf) then
     pcall(vim.api.nvim_buf_del_extmark, cast.buf, ns, cast.mark)
   end
@@ -330,13 +346,144 @@ local function narrate(cast, line)
   end
 end
 
---- Cancel every in-flight cast in the current buffer.
+local function find_cast(id)
+  for _, cast in ipairs(casts) do
+    if cast.id == id then
+      return cast
+    end
+  end
+end
+
+--- Resolve "the cast under review" from the current buffer's diff-side
+--- marker. Notifies and returns nil if the current buffer isn't one.
+local function current_review_cast()
+  local id = vim.b.conjurer_cast
+  if not id then
+    vim.notify("[conjurer] not a conjurer review buffer", vim.log.levels.ERROR)
+    return nil
+  end
+  local cast = find_cast(id)
+  if not cast or cast.state ~= "reviewing" then
+    vim.notify("[conjurer] this review is no longer active", vim.log.levels.WARN)
+    return nil
+  end
+  return cast
+end
+
+close_review = function(cast)
+  local r = cast.review
+  if not r then
+    return
+  end
+  r.closing = true
+  for _, w in ipairs({ r.before_win, r.after_win }) do
+    if vim.api.nvim_win_is_valid(w) then
+      pcall(vim.api.nvim_win_close, w, true)
+    end
+  end
+  for _, b in ipairs({ r.before_buf, r.after_buf }) do
+    if vim.api.nvim_buf_is_valid(b) then
+      pcall(vim.api.nvim_buf_delete, b, { force = true })
+    end
+  end
+  cast.review = nil
+end
+
+--- Open a native diff (new tabpage, two scratch buffers) showing the
+--- proposed result against the locked snippet, and mark the cast as
+--- awaiting a decision.
+local function begin_review(cast, result, config)
+  cast.state = "reviewing"
+  cast.result = result
+
+  local srow, scol, erow, ecol = bounds(cast)
+  if srow then
+    place_mark(cast, srow, scol, erow, ecol)
+  end
+
+  local filetype = vim.bo[cast.buf].filetype
+  local before_buf = vim.api.nvim_create_buf(false, true)
+  local after_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(before_buf, 0, -1, false, cast.snapshot)
+  vim.api.nvim_buf_set_lines(after_buf, 0, -1, false, vim.split(result, "\n", { plain = true }))
+  for _, b in ipairs({ before_buf, after_buf }) do
+    vim.bo[b].buftype = "nofile"
+    vim.bo[b].bufhidden = "wipe"
+    vim.bo[b].swapfile = false
+    vim.bo[b].filetype = filetype
+    vim.bo[b].modified = false
+  end
+  pcall(vim.api.nvim_buf_set_name, before_buf, ("conjurer://%d/before"):format(cast.id))
+  pcall(vim.api.nvim_buf_set_name, after_buf, ("conjurer://%d/after"):format(cast.id))
+
+  vim.cmd("tabnew")
+  local before_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(before_win, before_buf)
+  vim.cmd("belowright vsplit")
+  local after_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(after_win, after_buf)
+  vim.api.nvim_win_call(before_win, function()
+    vim.cmd("diffthis")
+  end)
+  vim.api.nvim_win_call(after_win, function()
+    vim.cmd("diffthis")
+  end)
+  vim.api.nvim_set_current_win(after_win)
+
+  cast.review = {
+    before_buf = before_buf,
+    after_buf = after_buf,
+    before_win = before_win,
+    after_win = after_win,
+    closing = false,
+  }
+  vim.b[before_buf].conjurer_cast = cast.id
+  vim.b[after_buf].conjurer_cast = cast.id
+
+  for _, b in ipairs({ before_buf, after_buf }) do
+    vim.api.nvim_create_autocmd("BufWipeout", {
+      buffer = b,
+      once = true,
+      callback = function()
+        if cast.review and not cast.review.closing then
+          vim.notify(
+            "[conjurer] review closed without a decision — treated as reject, buffer unchanged",
+            vim.log.levels.WARN
+          )
+          -- Deferred: this fires mid-teardown of a buffer/window Neovim is
+          -- still closing natively; tearing down the rest synchronously
+          -- from in here (close_review's own buffer deletes) is unsafe.
+          vim.schedule(function()
+            if cast.review and not cast.review.closing then
+              retire(cast)
+            end
+          end)
+        end
+      end,
+    })
+  end
+end
+
+--- Cancel every in-flight cast in the current buffer — or, if run from
+--- inside a review's diff buffer, cancel just that cast.
 function M.cancel()
   local buf = vim.api.nvim_get_current_buf()
+  local review_id = vim.b[buf].conjurer_cast
+  if review_id then
+    local cast = find_cast(review_id)
+    if cast and cast.state == "reviewing" then
+      retire(cast)
+      vim.notify("[conjurer] cancelled 1 conjure (review discarded)")
+    else
+      vim.notify("[conjurer] nothing to cancel")
+    end
+    return
+  end
+
   local n = 0
   for _, cast in ipairs(casts) do
     if cast.buf == buf and not cast.done then
-      if cast.handle and cast.handle.cancel then
+      if cast.state == "generating" and cast.handle and cast.handle.cancel then
         pcall(cast.handle.cancel)
       end
       retire(cast)
@@ -403,6 +550,113 @@ local function apply(cast, result, config)
   end
 end
 
+--- Call the configured provider for `request`, wiring its completion into
+--- either apply() or begin_review() depending on config.review. Shared by
+--- the initial cast and by retries (which re-dispatch on the same cast).
+local function invoke_provider(cast, request, config)
+  local fired = false
+  cast.handle = require("conjurer").get_provider()(request, function(err, result)
+    if fired or cast.done then
+      return -- stale/duplicate callback for a request that already resolved
+    end
+    fired = true
+    if not vim.api.nvim_buf_is_valid(cast.buf) then
+      retire(cast)
+      return
+    end
+    if err then
+      retire(cast)
+      vim.notify("[conjurer] " .. err, vim.log.levels.ERROR)
+      return
+    end
+    if config.review then
+      begin_review(cast, result, config)
+    else
+      apply(cast, result, config)
+    end
+  end)
+end
+
+--- Re-cast the same locked region, giving the model its rejected draft and
+--- the user's feedback so it revises rather than starting over.
+local function do_retry(cast, feedback)
+  local previous_attempt =
+    table.concat(vim.api.nvim_buf_get_lines(cast.review.after_buf, 0, -1, false), "\n")
+  close_review(cast)
+  cast.state = "generating"
+  cast.narration = {}
+
+  local srow, scol, erow, ecol = bounds(cast)
+  if not srow then
+    vim.notify("[conjurer] region was lost before the retry could start", vim.log.levels.WARN)
+    retire(cast)
+    return
+  end
+  place_mark(cast, srow, scol, erow, ecol)
+
+  local config = require("conjurer").config
+  local region = cast.kind == "line" and { kind = "line", srow = srow, erow = erow + 1 }
+    or { kind = "char", srow = srow, scol = scol, erow = erow, ecol = ecol }
+  local before, after = get_context(cast.buf, region, config.context_lines)
+
+  local request = {
+    config = config,
+    intent = cast.intent,
+    filetype = vim.bo[cast.buf].filetype,
+    text = table.concat(cast.snapshot, "\n"),
+    context_before = before,
+    context_after = after,
+    previous_attempt = previous_attempt,
+    feedback = feedback,
+  }
+  if config.narration then
+    request.on_narrate = function(line)
+      narrate(cast, line)
+    end
+  end
+  invoke_provider(cast, request, config)
+end
+
+--- Apply the currently-displayed proposed result (not the frozen original
+--- draft — do/dp in the diff may have hand-adjusted it) and close the diff.
+function M.accept()
+  local cast = current_review_cast()
+  if not cast then
+    return
+  end
+  local text = table.concat(vim.api.nvim_buf_get_lines(cast.review.after_buf, 0, -1, false), "\n")
+  apply(cast, text, require("conjurer").config)
+end
+
+--- Discard the reviewed result and close the diff; the buffer is left
+--- exactly as it was.
+function M.reject()
+  local cast = current_review_cast()
+  if not cast then
+    return
+  end
+  retire(cast)
+  vim.notify("[conjurer] rejected — buffer unchanged")
+end
+
+--- Re-conjure the reviewed region with feedback. With no feedback, prompts
+--- for it (history-backed, like the initial intent prompt).
+function M.retry(feedback)
+  local cast = current_review_cast()
+  if not cast then
+    return
+  end
+  if feedback == nil or feedback == "" then
+    vim.ui.input({ prompt = "Feedback: " }, function(fb)
+      if fb and fb ~= "" then
+        do_retry(cast, fb)
+      end
+    end)
+  else
+    do_retry(cast, feedback)
+  end
+end
+
 --- Kick off an async conjure over a region: lock it, stream narration into
 --- it, splice the result when it lands.
 function M.conjure_region(buf, region, intent)
@@ -417,11 +671,13 @@ function M.conjure_region(buf, region, intent)
   local before, after = get_context(buf, region, config.context_lines)
 
   local cast = {
+    id = new_id(),
     buf = buf,
     kind = region.kind,
     intent = intent,
     snapshot = snapshot,
     narration = {},
+    state = "generating",
   }
 
   if region.kind == "line" then
@@ -446,21 +702,7 @@ function M.conjure_region(buf, region, intent)
     end
   end
 
-  cast.handle = require("conjurer").get_provider()(request, function(err, result)
-    if cast.done then
-      return -- cancelled
-    end
-    if not vim.api.nvim_buf_is_valid(buf) then
-      retire(cast)
-      return
-    end
-    if err then
-      retire(cast)
-      vim.notify("[conjurer] " .. err, vim.log.levels.ERROR)
-      return
-    end
-    apply(cast, result, config)
-  end)
+  invoke_provider(cast, request, config)
 end
 
 return M
