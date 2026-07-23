@@ -21,9 +21,9 @@ It is a real Vim operator, so it composes with everything you already know:
 | `~` (visual) | conjure the selection |
 | `:'<,'>Conjure add error handling` | conjure a range with an inline intent |
 | `:ConjureCancel` | abort everything in flight in this buffer |
-| `:ConjureAccept` | apply the reviewed result and close the diff |
-| `:ConjureReject` | discard the reviewed result and close the diff |
-| `:ConjureRetry {feedback}` | re-conjure the reviewed region with feedback |
+| `:ConjureAccept` | keep the reviewed result and close the diff |
+| `:ConjureReject` | revert the reviewed result and close the diff |
+| `:ConjureRetry {feedback}` | revert, then re-conjure the region with feedback |
 
 The motion comes first, then the intent prompt — so `~ip` feels exactly like
 `dip` or `g~ip`: pick the target, then cast.
@@ -56,20 +56,23 @@ undo step.
 
 ## Reviewing before applying
 
-Set `review = true` and a finished conjure opens a native two-way diff (a new
-tabpage, `:diffthis` on both sides) instead of auto-applying — `]c`/`[c`/
-`do`/`dp` all work natively. The source region stays locked until you decide:
+Set `review = true` and a finished conjure lands in the buffer right away,
+then opens a native two-way diff in a new tabpage: a frozen snapshot of the
+whole file on the left, your real, already-patched buffer on the right —
+`]c`/`[c`/`do`/`dp` all work natively. The right side isn't a copy, so the
+region is no longer locked once a draft exists — scroll anywhere in the file
+for context, or edit the draft directly, while you decide:
 
 ```
-:ConjureAccept              splice in the right-hand buffer's current
-                             content and close the diff
-:ConjureReject               discard the draft, buffer untouched
-:ConjureRetry fix the edge case   send the draft + feedback back to the
-                             model, which revises rather than starting over
+:ConjureAccept              keep whatever's in the buffer, close the diff
+:ConjureReject               revert to the exact pre-conjure text
+:ConjureRetry fix the edge case   revert, then send the draft + feedback
+                             back to the model, which revises rather than
+                             starting over
 ```
 
 Closing the diff yourself without running one of those (`:tabclose`, etc.) is
-treated as a reject — nothing is written.
+treated as a reject — the draft is reverted, not left in place.
 
 ## Bottled Vim idioms
 

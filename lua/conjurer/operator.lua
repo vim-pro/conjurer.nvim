@@ -209,16 +209,15 @@ local function bounds(cast)
   return m[1], m[2], m[3].end_row, m[3].end_col
 end
 
---- Where the snapshot ends if placed back at (srow, scol).
-local function snapshot_extent(cast, srow, scol)
-  local snap = cast.snapshot
-  local erow = srow + #snap - 1
+--- Where `lines` would end if placed back at (srow, scol), for this cast's kind.
+local function replaced_extent(cast, srow, scol, lines)
+  local erow = srow + #lines - 1
   local ecol
   if cast.kind == "line" then
     scol = 0
-    ecol = #snap[#snap]
+    ecol = #lines[#lines]
   else
-    ecol = #snap == 1 and scol + #snap[1] or #snap[#snap]
+    ecol = #lines == 1 and scol + #lines[1] or #lines[#lines]
   end
   return srow, scol, erow, ecol
 end
@@ -240,23 +239,38 @@ local function region_changed(cast)
   return table.concat(lines, "\n") ~= table.concat(cast.snapshot, "\n")
 end
 
---- Put the snapshot back and re-anchor the mark: the region is not editable
---- while a conjure is in flight.
-local function restore(cast)
+--- Put cast.snapshot back at the mark's current bounds and re-anchor it.
+--- Returns true on success.
+local function revert_to_snapshot(cast)
   local srow, scol, erow, ecol = bounds(cast)
   if not srow then
-    return
+    return false
   end
   local ok
   if cast.kind == "line" then
-    ok = pcall(vim.api.nvim_buf_set_lines, cast.buf, srow, erow + 1, false, cast.snapshot)
+    if srow == erow and scol == ecol then
+      -- Fully collapsed (the whole region was deleted): insert, don't replace
+      -- whatever real line slid into this slot.
+      ok = pcall(vim.api.nvim_buf_set_lines, cast.buf, srow, srow, false, cast.snapshot)
+    else
+      ok = pcall(vim.api.nvim_buf_set_lines, cast.buf, srow, erow + 1, false, cast.snapshot)
+    end
   else
     ok = pcall(vim.api.nvim_buf_set_text, cast.buf, srow, scol, erow, ecol, cast.snapshot)
   end
   if not ok then
+    return false
+  end
+  place_mark(cast, replaced_extent(cast, srow, scol, cast.snapshot))
+  return true
+end
+
+--- Put the snapshot back and re-anchor the mark: the region is not editable
+--- while a conjure is in flight.
+local function restore(cast)
+  if not revert_to_snapshot(cast) then
     return
   end
-  place_mark(cast, snapshot_extent(cast, srow, scol))
   if not cast.scolded then
     cast.scolded = true
     vim.notify("[conjurer] region is locked while conjuring (:ConjureCancel to abort)", vim.log.levels.WARN)
@@ -307,7 +321,7 @@ local function ensure_lock(buf)
           return
         end
         for _, cast in ipairs(casts) do
-          if cast.buf == buf and not cast.done and region_changed(cast) then
+          if cast.buf == buf and not cast.done and cast.state == "generating" and region_changed(cast) then
             restore(cast)
           end
         end
@@ -322,6 +336,10 @@ end
 -- retire() needs to tear down an open review, but the review machinery is
 -- defined further down alongside the rest of accept/reject/retry.
 local close_review
+
+-- begin_review() needs to splice into the real buffer, but splice() is
+-- defined further down alongside apply() (its other caller).
+local splice
 
 --- Remove a cast's decorations and drop it from the registry.
 local function retire(cast)
@@ -354,12 +372,12 @@ local function find_cast(id)
   end
 end
 
---- Resolve "the cast under review" from the current buffer's diff-side
---- marker. Notifies and returns nil if the current buffer isn't one.
+--- Resolve "the cast under review" from the current tabpage's diff marker.
+--- Notifies and returns nil if the current tabpage isn't a review tab.
 local function current_review_cast()
-  local id = vim.b.conjurer_cast
+  local id = vim.t.conjurer_cast
   if not id then
-    vim.notify("[conjurer] not a conjurer review buffer", vim.log.levels.ERROR)
+    vim.notify("[conjurer] not a conjurer review tab", vim.log.levels.ERROR)
     return nil
   end
   local cast = find_cast(id)
@@ -370,58 +388,69 @@ local function current_review_cast()
   return cast
 end
 
+-- Never delete cast.buf here — after_win shows the real source buffer, only
+-- before_buf is ours to tear down.
 close_review = function(cast)
   local r = cast.review
   if not r then
     return
   end
   r.closing = true
-  for _, w in ipairs({ r.before_win, r.after_win }) do
-    if vim.api.nvim_win_is_valid(w) then
-      pcall(vim.api.nvim_win_close, w, true)
-    end
+  if vim.api.nvim_win_is_valid(r.after_win) then
+    pcall(vim.api.nvim_win_close, r.after_win, true)
   end
-  for _, b in ipairs({ r.before_buf, r.after_buf }) do
-    if vim.api.nvim_buf_is_valid(b) then
-      pcall(vim.api.nvim_buf_delete, b, { force = true })
-    end
+  if vim.api.nvim_win_is_valid(r.before_win) then
+    pcall(vim.api.nvim_win_close, r.before_win, true)
+  end
+  if vim.api.nvim_buf_is_valid(r.before_buf) then
+    pcall(vim.api.nvim_buf_delete, r.before_buf, { force = true })
   end
   cast.review = nil
 end
 
---- Open a native diff (new tabpage, two scratch buffers) showing the
---- proposed result against the locked snippet, and mark the cast as
---- awaiting a decision.
+--- Splice `result` into the real buffer right away and open a native diff
+--- (new tabpage) comparing a frozen whole-file "before" snapshot against the
+--- real, now-patched, freely editable buffer — so the region is no longer
+--- locked and the user can look around actual surrounding context while
+--- deciding. Reject/retry/cancel undo the splice; accept just stops tracking it.
 local function begin_review(cast, result, config)
-  cast.state = "reviewing"
-  cast.result = result
-
   local srow, scol, erow, ecol = bounds(cast)
-  if srow then
-    place_mark(cast, srow, scol, erow, ecol)
+  if not srow then
+    vim.notify("[conjurer] region was lost before the response arrived", vim.log.levels.WARN)
+    retire(cast)
+    return
   end
+
+  local full_before = vim.api.nvim_buf_get_lines(cast.buf, 0, -1, false)
+
+  local ok, fsrow, fscol, ferow, fecol = splice(cast, srow, scol, erow, ecol, result)
+  if not ok then
+    vim.notify("[conjurer] failed to apply result: " .. fsrow, vim.log.levels.ERROR)
+    retire(cast)
+    return
+  end
+
+  cast.state = "reviewing"
+  place_mark(cast, fsrow, fscol, ferow, fecol)
 
   local filetype = vim.bo[cast.buf].filetype
   local before_buf = vim.api.nvim_create_buf(false, true)
-  local after_buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_lines(before_buf, 0, -1, false, cast.snapshot)
-  vim.api.nvim_buf_set_lines(after_buf, 0, -1, false, vim.split(result, "\n", { plain = true }))
-  for _, b in ipairs({ before_buf, after_buf }) do
-    vim.bo[b].buftype = "nofile"
-    vim.bo[b].bufhidden = "wipe"
-    vim.bo[b].swapfile = false
-    vim.bo[b].filetype = filetype
-    vim.bo[b].modified = false
-  end
+  vim.api.nvim_buf_set_lines(before_buf, 0, -1, false, full_before)
+  vim.bo[before_buf].buftype = "nofile"
+  vim.bo[before_buf].bufhidden = "wipe"
+  vim.bo[before_buf].swapfile = false
+  vim.bo[before_buf].filetype = filetype
+  vim.bo[before_buf].modified = false
   pcall(vim.api.nvim_buf_set_name, before_buf, ("conjurer://%d/before"):format(cast.id))
-  pcall(vim.api.nvim_buf_set_name, after_buf, ("conjurer://%d/after"):format(cast.id))
 
   vim.cmd("tabnew")
+  local tabpage = vim.api.nvim_get_current_tabpage()
   local before_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(before_win, before_buf)
   vim.cmd("belowright vsplit")
   local after_win = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(after_win, after_buf)
+  vim.api.nvim_win_set_buf(after_win, cast.buf) -- the REAL buffer, not a copy
+  vim.api.nvim_win_set_cursor(after_win, { fsrow + 1, fscol })
   vim.api.nvim_win_call(before_win, function()
     vim.cmd("diffthis")
   end)
@@ -432,46 +461,47 @@ local function begin_review(cast, result, config)
 
   cast.review = {
     before_buf = before_buf,
-    after_buf = after_buf,
     before_win = before_win,
     after_win = after_win,
     closing = false,
   }
-  vim.b[before_buf].conjurer_cast = cast.id
-  vim.b[after_buf].conjurer_cast = cast.id
+  vim.t[tabpage].conjurer_cast = cast.id
 
-  for _, b in ipairs({ before_buf, after_buf }) do
-    vim.api.nvim_create_autocmd("BufWipeout", {
-      buffer = b,
-      once = true,
-      callback = function()
-        if cast.review and not cast.review.closing then
-          vim.notify(
-            "[conjurer] review closed without a decision — treated as reject, buffer unchanged",
-            vim.log.levels.WARN
-          )
-          -- Deferred: this fires mid-teardown of a buffer/window Neovim is
-          -- still closing natively; tearing down the rest synchronously
-          -- from in here (close_review's own buffer deletes) is unsafe.
-          vim.schedule(function()
-            if cast.review and not cast.review.closing then
-              retire(cast)
-            end
-          end)
-        end
-      end,
-    })
-  end
+  vim.api.nvim_create_autocmd("WinClosed", {
+    pattern = tostring(before_win) .. "," .. tostring(after_win),
+    once = true,
+    callback = function()
+      -- A single :tabclose can fire this for both windows in one batch,
+      -- before either scheduled body below has run — guard synchronously
+      -- rather than relying on `once` to dedupe across that batch.
+      if not cast.review or cast.review.closing then
+        return
+      end
+      cast.review.closing = true
+      vim.notify(
+        "[conjurer] review closed without a decision — treated as reject, buffer reverted",
+        vim.log.levels.WARN
+      )
+      -- Deferred: this fires mid-teardown of a window Neovim is still
+      -- closing natively; mutating further synchronously from in here is unsafe.
+      vim.schedule(function()
+        close_review(cast)
+        revert_to_snapshot(cast)
+        retire(cast)
+      end)
+    end,
+  })
 end
 
 --- Cancel every in-flight cast in the current buffer — or, if run from
---- inside a review's diff buffer, cancel just that cast.
+--- inside a review's diff tab, cancel just that cast.
 function M.cancel()
   local buf = vim.api.nvim_get_current_buf()
-  local review_id = vim.b[buf].conjurer_cast
+  local review_id = vim.t.conjurer_cast
   if review_id then
     local cast = find_cast(review_id)
     if cast and cast.state == "reviewing" then
+      revert_to_snapshot(cast)
       retire(cast)
       vim.notify("[conjurer] cancelled 1 conjure (review discarded)")
     else
@@ -485,6 +515,8 @@ function M.cancel()
     if cast.buf == buf and not cast.done then
       if cast.state == "generating" and cast.handle and cast.handle.cancel then
         pcall(cast.handle.cancel)
+      elseif cast.state == "reviewing" then
+        revert_to_snapshot(cast)
       end
       retire(cast)
       n = n + 1
@@ -516,14 +548,10 @@ local function mark_and_flash(buf, srow, scol, erow, ecol, config)
   end, ms)
 end
 
-local function apply(cast, result, config)
-  local srow, scol, erow, ecol = bounds(cast)
-  retire(cast)
-  if not srow then
-    vim.notify("[conjurer] region was lost before the response arrived", vim.log.levels.WARN)
-    return
-  end
-
+--- Splice `result` into cast.buf at (srow,scol)-(erow,ecol) (0-based, end
+--- exclusive). Returns ok, and on success the final srow/scol/erow/ecol (or
+--- ok=false and an error message).
+splice = function(cast, srow, scol, erow, ecol, result)
   local lines = vim.split(result, "\n", { plain = true })
   if cast.kind == "line" then
     -- Drop a trailing blank line so linewise replacements don't grow.
@@ -532,22 +560,32 @@ local function apply(cast, result, config)
     end
     local ok, err = pcall(vim.api.nvim_buf_set_lines, cast.buf, srow, erow + 1, false, lines)
     if not ok then
-      vim.notify("[conjurer] failed to apply result: " .. err, vim.log.levels.ERROR)
-      return
+      return false, err
     end
-    if #lines > 0 then
-      mark_and_flash(cast.buf, srow, 0, srow + #lines - 1, #lines[#lines], config)
-    end
-  else
-    local ok, err = pcall(vim.api.nvim_buf_set_text, cast.buf, srow, scol, erow, ecol, lines)
-    if not ok then
-      vim.notify("[conjurer] failed to apply result: " .. err, vim.log.levels.ERROR)
-      return
-    end
-    local frow = srow + #lines - 1
-    local fcol = #lines == 1 and scol + #lines[1] or #lines[#lines]
-    mark_and_flash(cast.buf, srow, scol, frow, fcol, config)
+    return true, srow, 0, srow + #lines - 1, #(lines[#lines] or "")
   end
+  local ok, err = pcall(vim.api.nvim_buf_set_text, cast.buf, srow, scol, erow, ecol, lines)
+  if not ok then
+    return false, err
+  end
+  local frow = srow + #lines - 1
+  local fcol = #lines == 1 and scol + #lines[1] or #lines[#lines]
+  return true, srow, scol, frow, fcol
+end
+
+local function apply(cast, result, config)
+  local srow, scol, erow, ecol = bounds(cast)
+  retire(cast)
+  if not srow then
+    vim.notify("[conjurer] region was lost before the response arrived", vim.log.levels.WARN)
+    return
+  end
+  local ok, fsrow, fscol, ferow, fecol = splice(cast, srow, scol, erow, ecol, result)
+  if not ok then
+    vim.notify("[conjurer] failed to apply result: " .. fsrow, vim.log.levels.ERROR)
+    return
+  end
+  mark_and_flash(cast.buf, fsrow, fscol, ferow, fecol, config)
 end
 
 --- Call the configured provider for `request`, wiring its completion into
@@ -577,26 +615,42 @@ local function invoke_provider(cast, request, config)
   end)
 end
 
---- Re-cast the same locked region, giving the model its rejected draft and
---- the user's feedback so it revises rather than starting over.
+--- Re-cast the same region, giving the model its rejected draft (read live,
+--- since the user may have hand-adjusted it directly) and the user's
+--- feedback so it revises rather than starting over.
 local function do_retry(cast, feedback)
-  local previous_attempt =
-    table.concat(vim.api.nvim_buf_get_lines(cast.review.after_buf, 0, -1, false), "\n")
+  local srow, scol, erow, ecol = bounds(cast)
+  local previous_attempt = ""
+  if srow then
+    local ok, lines
+    if cast.kind == "line" then
+      ok, lines = pcall(vim.api.nvim_buf_get_lines, cast.buf, srow, erow + 1, false)
+    else
+      ok, lines = pcall(vim.api.nvim_buf_get_text, cast.buf, srow, scol, erow, ecol, {})
+    end
+    if ok then
+      previous_attempt = table.concat(lines, "\n")
+    end
+  end
+
   close_review(cast)
+  -- Flip state/narration before reverting: revert_to_snapshot re-places the
+  -- mark, and its virt_lines depend on cast.state — flipping after would
+  -- leave a stale "reviewing" header for the whole retry generation.
   cast.state = "generating"
   cast.narration = {}
+  revert_to_snapshot(cast)
 
-  local srow, scol, erow, ecol = bounds(cast)
-  if not srow then
+  local rsrow, rscol, rerow, recol = bounds(cast)
+  if not rsrow then
     vim.notify("[conjurer] region was lost before the retry could start", vim.log.levels.WARN)
     retire(cast)
     return
   end
-  place_mark(cast, srow, scol, erow, ecol)
 
   local config = require("conjurer").config
-  local region = cast.kind == "line" and { kind = "line", srow = srow, erow = erow + 1 }
-    or { kind = "char", srow = srow, scol = scol, erow = erow, ecol = ecol }
+  local region = cast.kind == "line" and { kind = "line", srow = rsrow, erow = rerow + 1 }
+    or { kind = "char", srow = rsrow, scol = rscol, erow = rerow, ecol = recol }
   local before, after = get_context(cast.buf, region, config.context_lines)
 
   local request = {
@@ -617,24 +671,28 @@ local function do_retry(cast, feedback)
   invoke_provider(cast, request, config)
 end
 
---- Apply the currently-displayed proposed result (not the frozen original
---- draft — do/dp in the diff may have hand-adjusted it) and close the diff.
+--- Stop reviewing and keep whatever's currently in the buffer (the model's
+--- draft, possibly hand-adjusted via do/dp or a direct edit) — nothing left
+--- to splice, the real buffer already has it.
 function M.accept()
   local cast = current_review_cast()
   if not cast then
     return
   end
-  local text = table.concat(vim.api.nvim_buf_get_lines(cast.review.after_buf, 0, -1, false), "\n")
-  apply(cast, text, require("conjurer").config)
+  local srow, scol, erow, ecol = bounds(cast)
+  retire(cast)
+  if srow then
+    mark_and_flash(cast.buf, srow, scol, erow, ecol, require("conjurer").config)
+  end
 end
 
---- Discard the reviewed result and close the diff; the buffer is left
---- exactly as it was.
+--- Undo the draft (and any further hand-edits) back to the pre-conjure text.
 function M.reject()
   local cast = current_review_cast()
   if not cast then
     return
   end
+  revert_to_snapshot(cast)
   retire(cast)
   vim.notify("[conjurer] rejected — buffer unchanged")
 end

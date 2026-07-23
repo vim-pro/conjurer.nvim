@@ -121,32 +121,40 @@ splice — cancelling leaves the file byte-identical.
 ==============================================================================
 5. REVIEWING RESULTS                                          *conjurer-review*
 
-With `review = true`, a finished conjure does not splice in automatically —
-it opens a native two-way diff in a new tabpage instead: the locked snippet
-on the left, the model's proposed replacement on the right, both with
-'diff' set. |]c|, |[c|, |do| and |dp| all work exactly as they would in any
-other diff.
+With `review = true`, a finished conjure lands in the buffer immediately, but
+instead of stopping there it opens a native two-way diff in a new tabpage: a
+frozen snapshot of the whole file as it was on the left, and your real,
+already-patched buffer on the right, both with 'diff' set. |]c|, |[c|, |do|
+and |dp| all work exactly as they would in any other diff.
 
-The source region stays locked (see |conjurer-narration|) until you decide:
+Crucially, the right-hand side is not a copy — it is the actual file. The
+region is no longer locked once a draft exists (see |conjurer-narration|,
+which only locks the *generating* phase, before there's anything to look
+at): you're free to scroll anywhere in the buffer for context, or edit the
+draft directly, while deciding:
 
-    :ConjureAccept          splice in the right-hand buffer's current
-                             content and close the diff
-    :ConjureReject           discard the draft, close the diff, buffer
-                             untouched
-    :ConjureRetry {feedback} send the draft and your feedback back to the
-                             model, which revises rather than starting over
+    :ConjureAccept          stop reviewing and keep whatever the buffer
+                             currently holds, close the diff
+    :ConjureReject           undo the draft (and any further edits you made
+                             to it) back to the exact pre-conjure text
+    :ConjureRetry {feedback} revert the draft, then send it plus your
+                             feedback back to the model, which revises
+                             rather than starting over
 
-Accept applies whatever the right-hand buffer currently holds — if you used
-`do`/`dp` to hand-adjust the diff before accepting, that adjustment is what
-lands. All three commands work from either side of the diff.
+Accept doesn't need to write anything — the change already happened the
+moment review began. If you used `do`/`dp`, or just edited the text
+directly, whatever's live is what stays. All three commands work from either
+window of the diff tab.
 
 Closing the diff yourself (`:tabclose`, `:q` on both panes, etc.) without
-running one of the three commands is treated as a reject: nothing is
-written, and a warning notes the review was discarded.
+running one of the three commands is treated as a reject: the draft is
+reverted and a warning notes the review was discarded — the region never
+ends up silently keeping an undecided change.
 
-`:ConjureCancel` run from inside a review closes it (equivalent to reject);
-run from the source buffer, it cancels every in-flight or in-review conjure
-there, same as always.
+`:ConjureCancel` run from inside a review reverts and closes it (equivalent
+to reject); run from the source buffer while a review is open elsewhere on
+the same file, it also reverts that review rather than leaving the draft in
+place.
 
 Off by default — set `review = true` in |conjurer.setup()| to turn it on.
 
@@ -192,19 +200,19 @@ The unnamed register (`""`) is ignored — a bare `~` always prompts.
                         the way |:&&| reuses the last |:substitute|.
 
                                                              *:ConjureCancel*
-:ConjureCancel          Cancel every in-flight conjure in the current
-                        buffer: the request is killed, the lock and
-                        narration are removed, and the buffer is left
-                        exactly as it was. Run from inside a review, it
+:ConjureCancel          Cancel every in-flight or in-review conjure in the
+                        current buffer: any live request is killed, any
+                        landed draft is reverted, and the buffer ends up
+                        exactly as it was. Run from inside a review tab, it
                         cancels just that one. See |conjurer-review|.
 
                                                              *:ConjureAccept*
-:ConjureAccept          Apply the reviewed result and close the diff. See
-                        |conjurer-review|.
+:ConjureAccept          Stop reviewing and keep the buffer's current
+                        content, close the diff. See |conjurer-review|.
 
                                                              *:ConjureReject*
-:ConjureReject          Discard the reviewed result and close the diff. See
-                        |conjurer-review|.
+:ConjureReject          Revert the draft back to the pre-conjure text and
+                        close the diff. See |conjurer-review|.
 
                                                               *:ConjureRetry*
 :ConjureRetry {feedback}
@@ -266,8 +274,8 @@ Defaults: >lua
       -- Replace the built-in system prompt entirely (string), or nil.
       system_prompt = nil,
 
-      -- Review the result in a native diff before it's spliced in, instead
-      -- of auto-applying. See |conjurer-review|.
+      -- Review the result in a native diff (against the real, live buffer)
+      -- instead of just auto-applying. See |conjurer-review|.
       review = false,
     })
 <
