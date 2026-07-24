@@ -181,16 +181,21 @@ local function cast_site(site, intent, next_fn)
   refresh()
 
   local settled = false
+  local handle
   site.cancel = function()
     if settled or site.state ~= "running" then
       return
     end
     settled = true
+    if handle then
+      handle.cancel() -- abort the operator cast: no splice, no on_done
+    end
     site.state = "skipped"
     refresh()
+    next_fn()
   end
 
-  operator.conjure_region(site.buf, region, intent, {
+  handle = operator.conjure_region(site.buf, region, intent, {
     on_done = function(err, result)
       if settled then
         return

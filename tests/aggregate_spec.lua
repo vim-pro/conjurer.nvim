@@ -33,10 +33,10 @@ local function pending_calls()
   return n
 end
 
--- Resolve the oldest un-answered call with `result` (or an error).
+-- Resolve the oldest un-answered, un-cancelled call with `result` (or error).
 local function answer(result, err)
   for _, c in ipairs(calls) do
-    if not c.done then
+    if not c.done and not c.cancelled then
       c.done = true
       c.cb(err, result)
       return c
@@ -185,5 +185,60 @@ H.eq(#calls, 1, "ConjureNext cast exactly one site")
 answer("X1!")
 H.eq(vim.api.nvim_buf_get_lines(n, 0, 1, false)[1], "X1!", "current entry conjured")
 H.eq(vim.fn.getqflist({ idx = 0 }).idx, 2, "idx advanced to the next entry")
+
+-- 10) integration with quickfix.pro — only when the sibling checkout exists
+-- next to this repo. Keeps conjure's own CI green without it.
+local repo = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
+local sibling = vim.fn.fnamemodify(repo, ":h") .. "/quickfix"
+if vim.fn.isdirectory(sibling) == 1 then
+  vim.opt.rtp:prepend(sibling)
+  vim.cmd("runtime! plugin/quickfix-pro.lua")
+  local status_ns = require("quickfix-pro.render").status_ns
+
+  -- status decorations render for the driver's sites.
+  qf._reset()
+  calls = {}
+  local ib = buf_with({ "s1", "s2" })
+  vim.api.nvim_set_current_buf(ib)
+  vim.fn.setqflist({}, " ", { items = { { bufnr = ib, lnum = 1, text = "a" }, { bufnr = ib, lnum = 2, text = "b" } } })
+  vim.cmd("copen")
+  local qfbuf = vim.api.nvim_win_get_buf(vim.fn.getqflist({ winid = 1 }).winid)
+  qf.all("go")
+  vim.wait(1000, function()
+    return #vim.api.nvim_buf_get_extmarks(qfbuf, status_ns, 0, -1, {}) >= 1
+  end, 5)
+  local decorated = #vim.api.nvim_buf_get_extmarks(qfbuf, status_ns, 0, -1, {})
+  if decorated < 1 then
+    H.fail("quickfix.pro rendered no status decorations for driver sites")
+  end
+
+  -- dd on an in-flight row cancels the cast (no edit lands) via on_delete.
+  -- Row 1's site is running; delete it before answering.
+  vim.api.nvim_set_current_win(vim.fn.getqflist({ winid = 1 }).winid)
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  require("quickfix-pro.actions").delete_current()
+  vim.wait(1000, function()
+    return #vim.fn.getqflist({ items = 1 }).items == 1
+  end, 5)
+  H.eq(#vim.fn.getqflist({ items = 1 }).items, 1, "dd removed the in-flight row")
+  -- the cancelled cast's provider handle was told to cancel
+  local any_cancelled = false
+  for _, c in ipairs(calls) do
+    if c.cancelled then
+      any_cancelled = true
+    end
+  end
+  if not any_cancelled then
+    H.fail("dd did not cancel the in-flight cast via on_delete")
+  end
+  -- answering the surviving site still applies
+  answer("S2!")
+  H.eq(vim.api.nvim_buf_get_lines(ib, 1, 2, false)[1], "S2!", "surviving site still conjures after the delete")
+  H.eq(vim.api.nvim_buf_get_lines(ib, 0, 1, false)[1], "s1", "cancelled site's line is unchanged")
+  vim.cmd("cclose")
+  print("(quickfix.pro integration checks ran)")
+else
+  print("(quickfix.pro sibling not found — integration checks skipped)")
+end
 
 H.done("aggregate_spec PASS")

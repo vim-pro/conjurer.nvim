@@ -486,6 +486,20 @@ function M.conjure_region(buf, region, intent, opts)
       on_done(nil, result)
     end
   end)
+
+  -- A handle so a driver can abort this specific cast: kill the provider and
+  -- retire it, so no result is spliced and on_done never fires.
+  return {
+    cancel = function()
+      if cast.done then
+        return
+      end
+      if cast.handle and cast.handle.cancel then
+        pcall(cast.handle.cancel)
+      end
+      retire(cast)
+    end,
+  }
 end
 
 return M
