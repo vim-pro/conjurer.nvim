@@ -20,9 +20,10 @@ local M = {}
 ---@field line string|false Current-line key. Default "~~".
 
 ---@class conjurer.Config
----@field provider "auto"|"cli"|"anthropic"|string|conjurer.Provider
----@field model string
----@field cli_cmd string[]? Full CLI command; nil = claude print-mode with streaming.
+---@field provider "auto"|"cli"|"anthropic"|"openai"|"gemini"|string|conjurer.Provider
+---@field model string? Nil uses the resolved provider's own default.
+---@field cli string? Force a known CLI recipe by name ("claude"|"codex"|"gemini") without hand-writing cli_cmd.
+---@field cli_cmd string[]? Full CLI command; nil resolves a known one (see providers/known.lua).
 ---@field api_key_env string
 ---@field max_tokens integer
 ---@field thinking boolean
@@ -35,15 +36,24 @@ local M = {}
 
 ---@type conjurer.Config
 M.config = {
-  -- "auto" prefers a local CLI (`claude -p`) and falls back to the API.
-  -- Also accepts "cli", "anthropic", any module name under
-  -- lua/conjurer/providers/, or a function(request, callback).
+  -- "auto" prefers a known local CLI (claude, then codex, then gemini) and
+  -- falls back to whichever direct API has a key set (anthropic, then
+  -- openai, then gemini). Also accepts "cli", "anthropic", "openai",
+  -- "gemini", any module name under lua/conjurer/providers/, or a
+  -- function(request, callback).
   provider = "auto",
-  model = "claude-opus-4-8",
-  -- Local command for the "cli" provider. nil means the Claude Code CLI in
-  -- streaming print mode. A custom command owns its own flags; conjurer
-  -- pipes the prompt to stdin and reads stdout.
+  -- Nil uses whichever provider resolves its own default model.
+  model = nil,
+  -- Force a known CLI recipe by name ("claude"|"codex"|"gemini") when using
+  -- the "cli" provider, without hand-writing cli_cmd.
+  cli = nil,
+  -- Local command for the "cli" provider. nil resolves a known CLI (see
+  -- lua/conjurer/providers/known.lua) or the one named by `cli` above. A
+  -- custom command owns its own flags; conjurer pipes the prompt to stdin
+  -- and reads stdout.
   cli_cmd = nil,
+  -- Environment variable holding the API key ("anthropic" provider only —
+  -- "openai"/"gemini" use their own standard OPENAI_API_KEY/GEMINI_API_KEY).
   api_key_env = "ANTHROPIC_API_KEY",
   max_tokens = 16000,
   -- Adaptive thinking improves transform quality at some latency cost.
@@ -114,7 +124,7 @@ function M.get_provider()
   end
   if provider == "auto" then
     local exe = require("conjurer.providers.cli").command(M.config)[1]
-    provider = vim.fn.executable(exe) == 1 and "cli" or "anthropic"
+    provider = vim.fn.executable(exe) == 1 and "cli" or require("conjurer.providers.known").resolve_api().name
   end
   return require("conjurer.providers." .. provider).request
 end

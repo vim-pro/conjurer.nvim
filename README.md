@@ -134,10 +134,11 @@ Defaults shown:
 
 ```lua
 require("conjurer").setup({
-  provider = "auto",               -- "auto" | "cli" | "anthropic" | function(request, cb)
-  model = "claude-opus-4-8",
-  cli_cmd = nil,                   -- nil = claude CLI in streaming print mode
-  api_key_env = "ANTHROPIC_API_KEY",
+  provider = "auto",               -- "auto" | "cli" | "anthropic" | "openai" | "gemini" | function(request, cb)
+  model = nil,                     -- nil = the resolved provider's own default
+  cli = nil,                       -- force a known cli recipe: "claude" | "codex" | "gemini"
+  cli_cmd = nil,                   -- nil = resolve a known CLI (see cli above), or fully custom
+  api_key_env = "ANTHROPIC_API_KEY", -- "anthropic" only; openai/gemini use their own env vars
   max_tokens = 16000,
   thinking = true,                 -- adaptive thinking (better edits, more latency)
   context_lines = 40,              -- surrounding lines sent for context
@@ -154,14 +155,21 @@ require("conjurer").setup({
 
 ### Providers
 
-`"auto"` (the default) prefers a **local executable** — the Claude Code CLI in
-streaming print mode — and falls back to the Anthropic API when the executable
-isn't found. Force one with `provider = "cli"` or `provider = "anthropic"`.
+`"auto"` (the default) tries, in order: the **`claude`, `codex`, then
+`gemini` CLIs** (first one found on `$PATH` wins) — and if none are
+installed, whichever of `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
+`GEMINI_API_KEY` is actually set (same order), defaulting to Anthropic if
+none are. Force one with `provider = "cli"` (plus `cli = "codex"` etc. to
+pick a specific known CLI), or `"anthropic"` / `"openai"` / `"gemini"` to go
+straight to an API.
 
-Because the default CLI is Claude Code, it may read project context (e.g.
-`CLAUDE.md`) and has a cold-start cost of a few seconds per cast.
+The default CLI, Claude Code, may read project context (e.g. `CLAUDE.md`)
+and has a cold-start cost of a few seconds per cast. `codex`/`gemini` run
+non-interactively and print only the final result — no live narration from
+those two, everything else works the same.
 
-`cli_cmd` swaps in any local command; it owns its own flags, conjurer just
+`cli_cmd` swaps in any local command — ollama, opencode, aider, lm-studio,
+anything with a non-interactive mode — it owns its own flags, conjurer just
 pipes the prompt to stdin and reads stdout:
 
 ```lua

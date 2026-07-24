@@ -172,23 +172,32 @@ setup({opts})                                               *conjurer.setup()*
 Defaults: >lua
 
     require("conjurer").setup({
-      -- "auto" prefers a local CLI (`claude -p`), falls back to the API.
-      -- Also: "cli", "anthropic", any module under lua/conjurer/providers/,
-      -- or a function(request, callback).
+      -- "auto" prefers a known local CLI (claude, then codex, then gemini)
+      -- and falls back to whichever direct API has a key set (anthropic,
+      -- then openai, then gemini). Also: "cli", "anthropic", "openai",
+      -- "gemini", any module under lua/conjurer/providers/, or a
+      -- function(request, callback).
       provider = "auto",
 
-      -- Model for both the CLI (--model flag) and the API (request body).
-      model = "claude-opus-4-8",
+      -- Nil uses whichever provider resolves its own default model.
+      model = nil,
 
-      -- Command for the "cli" provider. nil means the Claude Code CLI in
-      -- streaming print mode:
+      -- Force a known CLI recipe by name ("claude"|"codex"|"gemini") for
+      -- the "cli" provider, without hand-writing cli_cmd.
+      cli = nil,
+
+      -- Command for the "cli" provider. nil resolves a known CLI (see
+      -- lua/conjurer/providers/known.lua) or the one named by `cli` above,
+      -- e.g. the Claude Code CLI in streaming print mode:
       --   claude -p --model <model> --output-format stream-json
       --     --include-partial-messages --verbose
       -- A custom command owns its own flags; conjurer pipes the prompt to
       -- stdin and reads stdout.
       cli_cmd = nil,
 
-      -- Environment variable holding the API key ("anthropic" provider).
+      -- Environment variable holding the API key ("anthropic" provider
+      -- only — "openai"/"gemini" use their own standard
+      -- OPENAI_API_KEY/GEMINI_API_KEY).
       api_key_env = "ANTHROPIC_API_KEY",
 
       -- Max output tokens ("anthropic" provider).
@@ -222,30 +231,49 @@ Defaults: >lua
 9. PROVIDERS                                              *conjurer-providers*
 
                                                       *conjurer-provider-auto*
-"auto" (the default) resolves at cast time: if the CLI command's executable
-is found, the "cli" provider is used; otherwise "anthropic".
+"auto" (the default) resolves at cast time by trying, in order: the
+`claude`, `codex`, then `gemini` CLIs (first one found on PATH wins, via
+the "cli" provider) — and if none are installed, whichever of
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` is actually set
+(same order), defaulting to "anthropic" if none are.
 
                                                        *conjurer-provider-cli*
-"cli" runs a local command — by default the Claude Code CLI in streaming
-print mode, riding your existing Claude Code auth (no API key needed).
-Because it is Claude Code, it may read project context (e.g. CLAUDE.md)
-and has a cold-start cost of a few seconds per cast.
+"cli" runs a local command. With no `cli_cmd`, it resolves one of a few
+known CLIs the same way "auto" does (claude, then codex, then gemini) —
+or force a specific one by name with `cli`: >lua
 
-Any command works, and a custom `cli_cmd` owns all of its own flags: >lua
+    require("conjurer").setup({
+      provider = "cli",
+      cli = "codex",   -- or "claude" / "gemini"
+    })
+<
+The default (claude) rides your existing Claude Code auth (no API key
+needed); because it is Claude Code, it may read project context (e.g.
+CLAUDE.md) and has a cold-start cost of a few seconds per cast. `codex` and
+`gemini` run OpenAI's and Google's CLIs non-interactively and print only
+the final result (no live narration from those two — see below).
+
+Any command works via `cli_cmd`, which owns all of its own flags and takes
+priority over `cli`: >lua
 
     require("conjurer").setup({
       provider = "cli",
       cli_cmd = { "ollama", "run", "qwen2.5-coder" },
     })
 <
-A custom command's stdout is treated as a plain text stream: if the model
-follows the narration protocol (see below) narration works; otherwise the
-whole output is the replacement.
+A custom command's stdout is treated as a stream of the narration protocol
+where the CLI speaks it; otherwise the whole output is the replacement —
+this is also why `codex`/`gemini` still work with no special handling,
+despite not speaking the protocol themselves. Other local runners
+(opencode, aider, lm-studio, ...) work the same way — point `cli_cmd` at
+however you invoke them non-interactively.
 
-                                                 *conjurer-provider-anthropic*
-"anthropic" calls the Anthropic Messages API directly via curl with SSE
-streaming. Requires an API key in the environment variable named by
-`api_key_env`.
+                                           *conjurer-provider-anthropic* *conjurer-provider-openai* *conjurer-provider-gemini*
+"anthropic", "openai", and "gemini" each call that vendor's API directly via
+curl with SSE streaming, and default to a sensible current model for that
+vendor when `model` is nil. "anthropic" reads its key from the environment
+variable named by `api_key_env` (default `ANTHROPIC_API_KEY`); "openai" and
+"gemini" always read `OPENAI_API_KEY`/`GEMINI_API_KEY`.
 
                                                   *conjurer-provider-function*
 A function receives the request and a callback, so any backend works: >lua

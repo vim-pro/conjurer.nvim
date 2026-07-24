@@ -21,11 +21,18 @@ function M.check()
   end
 
   local cli = require("conjurer.providers.cli")
-  local cmd = cli.command(config)
+  local known = require("conjurer.providers.known")
+
+  local ok, cmd = pcall(cli.command, config)
+  if not ok then
+    health.error("config.cli: " .. tostring(cmd))
+    return
+  end
   local cli_ok = vim.fn.executable(cmd[1]) == 1
+  local api = known.resolve_api()
 
   if provider == "auto" then
-    health.info(("provider: auto (resolves to %s)"):format(cli_ok and "cli" or "anthropic"))
+    health.info(("provider: auto (resolves to %s)"):format(cli_ok and "cli" or api.name))
   else
     health.info("provider: " .. provider)
   end
@@ -37,25 +44,34 @@ function M.check()
     else
       local report = provider == "cli" and health.error or health.warn
       report(("CLI executable not found: %s"):format(cmd[1]), {
-        "Install the Claude Code CLI, or set cli_cmd to another command",
+        "Install one of: " .. table.concat(
+          vim.tbl_map(function(r)
+            return r.bin
+          end, known.clis),
+          ", "
+        ),
+        "or set cli_cmd/cli to another command",
       })
     end
   end
 
-  if provider == "anthropic" or (provider == "auto" and not cli_ok) then
+  if provider == "anthropic" or provider == "openai" or provider == "gemini" or (provider == "auto" and not cli_ok) then
+    local name = provider ~= "auto" and provider or api.name
     if vim.fn.executable("curl") == 1 then
       health.ok("curl found")
     else
-      health.error("curl not found (required by the anthropic provider)")
+      health.error(("curl not found (required by the %s provider)"):format(name))
     end
-    local key = vim.env[config.api_key_env]
+    local env = name == "anthropic" and config.api_key_env or (name == "openai" and "OPENAI_API_KEY" or "GEMINI_API_KEY")
+    local key = vim.env[env]
     if key and key ~= "" then
-      health.ok(config.api_key_env .. " is set")
+      health.ok(env .. " is set")
     else
-      health.error(config.api_key_env .. " is not set", {
-        "export " .. config.api_key_env .. "=<your key>",
-        "or set config.api_key_env to the variable you use",
-      })
+      local tips = { "export " .. env .. "=<your key>" }
+      if name == "anthropic" then
+        table.insert(tips, "or set config.api_key_env to the variable you use")
+      end
+      health.error(env .. " is not set", tips)
     end
   end
 end

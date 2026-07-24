@@ -1,23 +1,47 @@
--- Provider that shells out to a local LLM CLI. The default command is the
--- Claude Code CLI in streaming print mode, so narration arrives live. A
--- custom `cli_cmd` owns all of its own flags; conjurer pipes the prompt to
--- stdin and treats stdout as a plain text stream of the narration protocol.
+-- Provider that shells out to a local LLM CLI. Recognizes a handful of
+-- popular CLIs out of the box (see providers/known.lua); a custom `cli_cmd`
+-- owns all of its own flags. conjurer pipes the prompt to stdin and treats
+-- stdout as a stream of the narration protocol where the CLI speaks it,
+-- falling back to plain text otherwise.
 local M = {}
 
 local prompt = require("conjurer.prompt")
+local known = require("conjurer.providers.known")
 
+--- Resolve the command to run: an explicit cli_cmd wins outright; config.cli
+--- forces a specific known recipe by name; otherwise the first known CLI
+--- whose binary is on PATH wins, falling back to claude's recipe if none
+--- are (matching this function's older behavior of always returning
+--- something, even when nothing is actually executable — callers check
+--- executability themselves).
 function M.command(config)
-  return config.cli_cmd
-    or {
-      "claude",
-      "-p",
-      "--model",
-      config.model,
-      "--output-format",
-      "stream-json",
-      "--include-partial-messages",
-      "--verbose",
-    }
+  if config.cli_cmd then
+    return config.cli_cmd
+  end
+  if config.cli then
+    for _, recipe in ipairs(known.clis) do
+      if recipe.name == config.cli then
+        return recipe.command(config)
+      end
+    end
+    error(
+      ("[conjurer] unknown cli '%s' — expected one of: %s"):format(
+        config.cli,
+        table.concat(
+          vim.tbl_map(function(r)
+            return r.name
+          end, known.clis),
+          ", "
+        )
+      )
+    )
+  end
+  for _, recipe in ipairs(known.clis) do
+    if vim.fn.executable(recipe.bin) == 1 then
+      return recipe.command(config)
+    end
+  end
+  return known.clis[1].command(config)
 end
 
 -- Feed one line of claude --output-format stream-json into the sink.
@@ -55,6 +79,11 @@ function M.request(request, callback)
     return
   end
 
+  -- Attempted whenever the command wasn't fully custom, including for known
+  -- CLIs other than claude (codex, gemini) that don't actually speak this
+  -- format: feed_stream_json's non-JSON fallback degrades those to plain
+  -- narration-protocol text, so this is safe even though it looks
+  -- claude-specific.
   local streaming_json = config.cli_cmd == nil
   local sink = prompt.new_sink(request.on_narrate)
   local jsonbuf = ""
