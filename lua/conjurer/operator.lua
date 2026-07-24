@@ -403,13 +403,29 @@ local function apply(cast, result, config)
   end
 end
 
+--- Reuse `intent` as the last-cast intent, so `.` and a bare `~` on a
+--- nearby site pick it up. Casts driven directly (e.g. the aggregate driver)
+--- call this since they bypass the operator's own intent capture.
+---@param intent string
+function M.remember_intent(intent)
+  current_intent = intent
+end
+
 --- Kick off an async conjure over a region: lock it, stream narration into
---- it, splice the result when it lands.
-function M.conjure_region(buf, region, intent)
+--- it, splice the result when it lands. `opts.on_done(err, result)` (optional)
+--- fires once the cast resolves — after the splice on success, or with an
+--- error string on failure — for callers (like the aggregate driver) that
+--- sequence work across many casts.
+---@param opts { on_done: fun(err: string?, result: string?) }?
+function M.conjure_region(buf, region, intent, opts)
   local config = require("conjurer").config
+  local on_done = opts and opts.on_done
 
   if not vim.bo[buf].modifiable or vim.bo[buf].readonly then
     vim.notify("[conjurer] buffer is not modifiable", vim.log.levels.ERROR)
+    if on_done then
+      on_done("buffer is not modifiable")
+    end
     return
   end
 
@@ -452,14 +468,23 @@ function M.conjure_region(buf, region, intent)
     end
     if not vim.api.nvim_buf_is_valid(buf) then
       retire(cast)
+      if on_done then
+        on_done("buffer was closed before the response arrived")
+      end
       return
     end
     if err then
       retire(cast)
       vim.notify("[conjurer] " .. err, vim.log.levels.ERROR)
+      if on_done then
+        on_done(err)
+      end
       return
     end
     apply(cast, result, config)
+    if on_done then
+      on_done(nil, result)
+    end
   end)
 end
 

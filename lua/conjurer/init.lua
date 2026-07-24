@@ -28,6 +28,7 @@ local M = {}
 ---@field max_tokens integer
 ---@field thinking boolean
 ---@field context_lines integer
+---@field max_concurrent integer Sites cast at once by :ConjureAll.
 ---@field narration boolean
 ---@field flash_ms integer|false
 ---@field flash_hl string
@@ -60,6 +61,9 @@ M.config = {
   thinking = true,
   -- Lines of surrounding buffer context sent with each request.
   context_lines = 40,
+  -- Aggregate conjuring (:ConjureAll): how many sites to cast at once. Higher
+  -- finishes sooner but fans out more concurrent provider processes.
+  max_concurrent = 4,
   -- Stream the model's narration into the pending region as virtual lines.
   narration = true,
   -- Flash the conjured text when it lands (like the on_yank highlight).
@@ -112,6 +116,28 @@ function M.setup(opts)
     operator.cancel()
   end, {
     desc = "Cancel all in-flight conjures in this buffer",
+  })
+
+  -- Aggregate conjuring over the quickfix list. Populate the list however you
+  -- like (:grep, LSP references, :cexpr), then cast a shared intent over it.
+  vim.api.nvim_create_user_command("ConjureAll", function(cmd)
+    require("conjurer.quickfix").all(cmd.args)
+  end, {
+    nargs = "*",
+    desc = "Conjure an intent over every entry in the quickfix list",
+  })
+
+  vim.api.nvim_create_user_command("ConjureNext", function(cmd)
+    require("conjurer.quickfix").next(cmd.args)
+  end, {
+    nargs = "*",
+    desc = "Conjure the current quickfix entry and advance (reuses the last intent)",
+  })
+
+  vim.api.nvim_create_user_command("ConjureRejectSite", function()
+    require("conjurer.quickfix").reject()
+  end, {
+    desc = "Revert the conjured quickfix site under the cursor",
   })
 end
 
