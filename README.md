@@ -87,6 +87,13 @@ stored intent is reused.
 
 ## Install
 
+vim.pack (Neovim 0.12+'s built-in manager, no plugin manager needed):
+
+```lua
+vim.pack.add({ "https://github.com/vim-pro/conjurer.nvim" })
+require("conjurer").setup()
+```
+
 lazy.nvim:
 
 ```lua
@@ -121,9 +128,10 @@ require("mini.deps").add("vim-pro/conjurer.nvim")
 require("conjurer").setup()
 ```
 
-Requires Neovim 0.10+. The default provider prefers the local `claude` CLI
-(no API key needed); without it, `curl` plus an API key in
-`$ANTHROPIC_API_KEY` (configurable).
+Requires Neovim 0.10+ (0.12+ for vim.pack itself). The default provider
+prefers a local CLI (`claude`, `codex`, or `gemini` — no API key needed);
+without one, `curl` plus a key in `$ANTHROPIC_API_KEY`, `$OPENAI_API_KEY`,
+or `$GEMINI_API_KEY`. See [Providers](#providers) below.
 
 After installing: `:h conjurer` for the full manual, `:checkhealth conjurer`
 to verify your setup.
