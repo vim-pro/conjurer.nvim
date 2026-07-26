@@ -44,9 +44,25 @@ local HL = {
 
 local registered = false
 
--- The applied region's current start row (a point extmark anchored at the
--- region start; it tracks edits made above it), or nil if lost.
+-- The applied region's current start row (0-based). The quickfix list's own
+-- hidden marks are the robust tracker: a same-count line REPLACE (what a
+-- revert of the row above does) collapses an adjacent left-gravity extmark
+-- onto the replaced row, but the entry's lnum tracks it correctly — verified
+-- empirically. So the entry is the primary source; the site's extmark is
+-- only the fallback for a site whose entry has left the list.
 local function site_row(site)
+  if site.qf_id then
+    local list = vim.fn.getqflist({ id = site.qf_id, items = 1 })
+    for _, e in ipairs(list.items) do
+      local ud = e.user_data
+      if type(ud) == "table" and type(ud.conjurer) == "table" and ud.conjurer.site == site.id then
+        if e.lnum and e.lnum > 0 then
+          return e.lnum - 1
+        end
+        break
+      end
+    end
+  end
   if not site.extmark or not vim.api.nvim_buf_is_valid(site.buf) then
     return nil
   end

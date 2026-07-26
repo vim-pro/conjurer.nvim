@@ -345,6 +345,28 @@ H.eq(vim.api.nvim_buf_get_lines(rb[4], 0, 1, false)[1], "orig4", "queued site's 
 qf.all("go")
 H.eq(#calls, 3, "re-run after reject-all casts nothing")
 
+-- ADJACENT-ROW REGRESSION: reverting row N (a same-count line replace)
+-- collapses a left-gravity extmark anchored on row N+1 onto row N — so a
+-- batch revert of adjacent sites tracked by extmarks writes both snapshots
+-- into the same row. Site rows must come from the qf entry's own hidden
+-- marks, which survive the replace. (Found by the demo smoke, pinned here.)
+qf._reset()
+calls = {}
+local adj = buf_with({ "head", "alpha", "beta", "tail" })
+vim.fn.setqflist({}, " ", {
+  items = { { bufnr = adj, lnum = 2, text = "a" }, { bufnr = adj, lnum = 3, text = "b" } },
+})
+qf.all("go") -- same buffer: serialized
+answer("ALPHA")
+answer("BETA")
+H.eq(table.concat(vim.api.nvim_buf_get_lines(adj, 0, -1, false), ","), "head,ALPHA,BETA,tail", "both applied")
+qf.reject_all()
+H.eq(
+  table.concat(vim.api.nvim_buf_get_lines(adj, 0, -1, false), ","),
+  "head,alpha,beta,tail",
+  "adjacent sites both reverted to their own rows"
+)
+
 -- 9g) treesitter region expansion: a bare entry on a multi-line statement's
 -- first line casts the whole statement; explicit ranges and no-parser
 -- buffers stay as-is; expansion feeds overlap detection.

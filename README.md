@@ -28,6 +28,8 @@ It is a real Vim operator, so it composes with everything you already know:
 | `:ConjureNext` | conjure the current quickfix entry and advance |
 | `:ConjureRejectSite` | revert the conjured site under the cursor |
 | `:ConjureRetrySite {feedback}` | have the model revise the site's draft |
+| `:ConjureRejectAll` | unwind the whole batch |
+| `:'<,'>ConjureExemplar` | pin a finished example every site must match |
 
 The motion comes first, then the intent prompt — so `~ip` feels exactly like
 `dip` or `g~ip`: pick the target, then cast.
@@ -88,18 +90,29 @@ One intent, many sites. Populate the quickfix list however you like —
 :ConjureAll convert these prints to structured logging
 ```
 
-Casts run with bounded concurrency (`max_concurrent`), same-file sites
-serialize so splices never collide, and each site tracks its own state:
-pending → running → done / skipped / failed. A model that returns a site
-unchanged marks it skipped — false positives in the list are tolerated for
-free. Re-running `:ConjureAll` is idempotent (only pending and failed sites
-cast), so `:grepadd` + re-run grows the job naturally.
+A bare entry expands to the smallest multi-line syntax node starting on its
+line — a grep hit on a four-line call edits the whole call (`region_expand =
+false` disables; explicit `end_lnum` ranges are always used verbatim). Casts
+run with bounded concurrency (`max_concurrent`), same-file sites serialize so
+splices never collide, and each site tracks its own state: pending → running
+→ done / skipped / failed. A model that returns a site unchanged marks it
+skipped — false positives in the list are tolerated for free. Re-running
+`:ConjureAll` is idempotent (only pending and failed sites cast), so
+`:grepadd` + re-run grows the job naturally.
 
 Review happens in place: walk with `:cnext` (entries auto-track the edits),
 judge each site in its real surroundings, `:ConjureRejectSite` any you don't
-want. `:ConjureNext` casts one entry at a time for careful passes — and the
-aggregate intent feeds `~`/`.`, so spot-repairing a site the search missed is
-one motion away.
+want — or `:ConjureRejectAll` to unwind the whole batch (queued dropped,
+running killed, applied reverted). `:ConjureNext` casts one entry at a time
+for careful passes — and the aggregate intent feeds `~`/`.`, so
+spot-repairing a site the search missed is one motion away.
+
+**Keeping N sites consistent:** cast one pilot site with `:ConjureNext`, fix
+it until it's right, then `:ConjureAll` — the fan-out harvests the pilot's
+live text (your edits included) as the *exemplar* every remaining site is
+told to match exactly. When the convention lives elsewhere in the codebase,
+pin it explicitly with `:'<,'>ConjureExemplar` (explicit beats inferred;
+`:ConjureExemplar!` clears, bare shows what's in effect).
 
 With [quickfix.pro](https://github.com/vim-pro/quickfix.pro) installed, the
 list shows live per-site status signs, `<Tab>` expands a site into its
@@ -205,6 +218,7 @@ require("conjurer").setup({
   thinking = true,                 -- adaptive thinking (better edits, more latency)
   context_lines = 40,              -- surrounding lines sent for context
   max_concurrent = 4,              -- :ConjureAll sites cast at once
+  region_expand = true,            -- grow bare entries to the enclosing node
   narration = true,                -- stream model narration into the region
   flash_ms = 150,                  -- completion flash; false/0 disables
   flash_hl = "IncSearch",
@@ -231,6 +245,11 @@ The default CLI, Claude Code, may read project context (e.g. `CLAUDE.md`)
 and has a cold-start cost of a few seconds per cast. `codex`/`gemini` run
 non-interactively and print only the final result — no live narration from
 those two, everything else works the same.
+
+The cold start is per cast by design (every cast is an independent,
+stateless request). Fine for `~ip`; it adds up on a 30-site `:ConjureAll` —
+the direct API providers have no cold start, which makes them the better
+familiar for large aggregate batches.
 
 `cli_cmd` swaps in any local command — ollama, opencode, aider, lm-studio,
 anything with a non-interactive mode — it owns its own flags, conjurer just

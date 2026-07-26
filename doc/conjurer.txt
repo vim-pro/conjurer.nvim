@@ -168,10 +168,14 @@ prune it (|:Cfilter|, or just delete rows), then:
 >
     :ConjureAll convert these to structured logging
 <
-Every valid entry becomes a site. Casts run with bounded concurrency
-(`max_concurrent`, default 4), and sites in the same file run one at a time
-so one splice can never disturb another's pending region. Each site tracks
-its own state:
+Every valid entry becomes a site. A bare entry is expanded to the smallest
+multi-line syntax node starting on its line — a grep hit on the first line
+of a four-line call edits the whole call, not one line of it — while
+entries carrying an explicit end_lnum are used verbatim and buffers without
+a parser fall back to the line (`region_expand = false` turns expansion
+off). Casts run with bounded concurrency (`max_concurrent`, default 4),
+and sites in the same file run one at a time so one splice can never
+disturb another's pending region. Each site tracks its own state:
 
     pending    queued, not started
     running    request in flight
@@ -196,7 +200,31 @@ review surface.
 |:ConjureNext| casts just the current entry and advances, for a careful
 one-at-a-time pass. The aggregate intent also becomes the operator's
 remembered intent, so a site the search missed is one `~ip` + <CR> (or |.|)
-away — see |conjurer-repeat|.
+away — see |conjurer-repeat|. |:ConjureRejectAll| unwinds the whole batch:
+queued sites are dropped, in-flight requests are killed, applied sites
+revert to their exact original text. (Plain |u| stays honest too — each
+site is one undo step in its own buffer.)
+
+                                                          *conjurer-exemplar*
+N independent casts asked to "pick a convention" will pick two. The fix is
+an exemplar: one finished, approved result that every site's request
+carries with the instruction to match its style exactly. Conjurer infers it
+from the natural pilot workflow — cast ONE site first (|:ConjureNext|),
+judge it, fix it by hand or with |:ConjureRetrySite| until it's right, then
+|:ConjureAll|: the fan-out harvests the pilot's live text (your edits
+included) as the exemplar for the rest. The model's own first draft never
+seeds the convention on its own — the pilot had to pass through your
+review to be standing there when you fanned out.
+
+When the convention lives somewhere other than a conjured site (an
+exemplary block elsewhere in the codebase), pin it explicitly:
+>
+    :'<,'>ConjureExemplar
+<
+An explicit exemplar always beats an inferred one. |:ConjureExemplar|!
+clears either kind; bare |:ConjureExemplar| shows what's in effect and
+whether you chose it or it was inferred. The exemplar belongs to the
+quickfix list it was set for (it lives in that list's |quickfix-context|).
 
 With the quickfix.pro plugin installed (https://github.com/vim-pro/quickfix.pro)
 the list gains live per-site status signs, an inline before/after diff on
@@ -297,6 +325,23 @@ The unnamed register (`""`) is ignored — a bare `~` always prompts.
                         no argument, prompts for feedback. See
                         |conjurer-aggregate|.
 
+                                                          *:ConjureRejectAll*
+:ConjureRejectAll       Unwind the whole batch: drop queued sites, kill
+                        in-flight requests, revert applied sites to their
+                        exact original text. See |conjurer-aggregate|.
+
+                                                           *:ConjureExemplar*
+:{range}ConjureExemplar
+                        Pin the range's lines as this quickfix list's
+                        exemplar — a finished example every site's cast
+                        must match in style and conventions. Beats any
+                        inferred exemplar. See |conjurer-exemplar|.
+
+:ConjureExemplar!       Clear the exemplar (explicit or inferred).
+
+:ConjureExemplar        Show the exemplar in effect and whether it was
+                        pinned or inferred from the pilot site.
+
 ==============================================================================
 10. CONFIGURATION                                     *conjurer-configuration*
 
@@ -346,6 +391,10 @@ Defaults: >lua
       -- sites always serialize regardless. See |conjurer-aggregate|.
       max_concurrent = 4,
 
+      -- Expand bare quickfix entries to the smallest multi-line syntax
+      -- node starting on their line. false = always whole-line.
+      region_expand = true,
+
       -- Stream the model's narration into the pending region.
       narration = true,
 
@@ -393,6 +442,13 @@ needed); because it is Claude Code, it may read project context (e.g.
 CLAUDE.md) and has a cold-start cost of a few seconds per cast. `codex` and
 `gemini` run OpenAI's and Google's CLIs non-interactively and print only
 the final result (no live narration from those two — see below).
+
+The cold start is per cast by design: every cast is an independent,
+stateless request (session reuse would leak one cast's conversation into
+the next). For a single `~ip` it's a shrug; for a 30-site |:ConjureAll| it
+adds up — `max_concurrent` overlaps the startup latency, and the direct
+API providers ("anthropic"/"openai"/"gemini") have no cold start at all,
+which makes them the better familiar for large aggregate batches.
 
 Any command works via `cli_cmd`, which owns all of its own flags and takes
 priority over `cli`: >lua
