@@ -28,14 +28,17 @@ end
 -- quickfix.pro integration (optional both ways)
 -- ---------------------------------------------------------------------------
 
+-- A skipped site gets the conjure key itself, in warning yellow: the cast ran
+-- (or was never worth running) and deliberately left the text alone — worth
+-- noticing, unlike a plain no-op, but not a failure.
 local ICON =
-  { pending = "·", running = "…", done = "✓", failed = "✗", skipped = "↷", rejected = "⊘" }
+  { pending = "·", running = "…", done = "✓", failed = "✗", skipped = "~", rejected = "⊘" }
 local HL = {
   pending = "Comment",
   running = "DiagnosticInfo",
   done = "DiagnosticOk",
   failed = "DiagnosticError",
-  skipped = "Comment",
+  skipped = "DiagnosticWarn",
   rejected = "DiagnosticWarn",
 }
 
