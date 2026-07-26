@@ -11,16 +11,17 @@ CONTENTS                                                   *conjurer-contents*
   3. Mappings .................................... |conjurer-mappings|
   4. Narration and locking ....................... |conjurer-narration|
   5. Reviewing results ........................... |conjurer-review|
-  6. Repeating with . ............................ |conjurer-repeat|
-  7. Registers as intents ........................ |conjurer-registers|
-  8. Commands .................................... |conjurer-commands|
-  9. Configuration ............................... |conjurer-configuration|
- 10. Providers ................................... |conjurer-providers|
- 11. Vim idioms .................................. |conjurer-idioms|
- 12. Highlights .................................. |conjurer-highlights|
- 13. Privacy ..................................... |conjurer-privacy|
- 14. Health ...................................... |conjurer-health|
- 15. License ..................................... |conjurer-license|
+  6. Aggregate conjuring ......................... |conjurer-aggregate|
+  7. Repeating with . ............................ |conjurer-repeat|
+  8. Registers as intents ........................ |conjurer-registers|
+  9. Commands .................................... |conjurer-commands|
+ 10. Configuration ............................... |conjurer-configuration|
+ 11. Providers ................................... |conjurer-providers|
+ 12. Vim idioms .................................. |conjurer-idioms|
+ 13. Highlights .................................. |conjurer-highlights|
+ 14. Privacy ..................................... |conjurer-privacy|
+ 15. Health ...................................... |conjurer-health|
+ 16. License ..................................... |conjurer-license|
 
 ==============================================================================
 1. INTRODUCTION                                        *conjurer-introduction*
@@ -159,7 +160,49 @@ place.
 Off by default — set `review = true` in |conjurer.setup()| to turn it on.
 
 ==============================================================================
-6. REPEATING WITH .                                          *conjurer-repeat*
+6. AGGREGATE CONJURING                                    *conjurer-aggregate*
+
+One intent, many sites. Populate the quickfix list with any of Vim's native
+verbs — |:grep|, |:vimgrep|, LSP references, |:cexpr|, a hand-curated list —
+prune it (|:Cfilter|, or just delete rows), then:
+>
+    :ConjureAll convert these to structured logging
+<
+Every valid entry becomes a site. Casts run with bounded concurrency
+(`max_concurrent`, default 4), and sites in the same file run one at a time
+so one splice can never disturb another's pending region. Each site tracks
+its own state:
+
+    pending    queued, not started
+    running    request in flight
+    done       result applied
+    skipped    the model returned the text unchanged (a false-positive
+               entry, tolerated for free), or the site overlaps another
+    failed     the request errored
+    rejected   you reverted it
+
+Re-running |:ConjureAll| is idempotent: settled sites are left alone, only
+pending and failed ones cast — so "run, discover more sites, |:grepadd|,
+run again" needs no special handling.
+
+Reviewing happens in place, at your pace: walk the list with |:cnext| (entry
+positions auto-adjust as buffers change, so you land on the applied text),
+judge each site in its real surroundings, and |:ConjureRejectSite| any you
+don't want — it restores that site's original text exactly. `review = true`
+does not open diff tabs for aggregate casts; the list is the review surface.
+
+|:ConjureNext| casts just the current entry and advances, for a careful
+one-at-a-time pass. The aggregate intent also becomes the operator's
+remembered intent, so a site the search missed is one `~ip` + <CR> (or |.|)
+away — see |conjurer-repeat|.
+
+With the quickfix.pro plugin installed (https://github.com/vim-pro/quickfix.pro)
+the list gains live per-site status signs, an inline before/after diff on
+<Tab>, and `dd` on a running site actually cancels its request. Without it
+everything still works — the edits just land undecorated.
+
+==============================================================================
+7. REPEATING WITH .                                          *conjurer-repeat*
 
 The intent is captured once, when the operator is invoked. |.| replays the
 operator over a new target without prompting — the stored intent is reused:
@@ -172,7 +215,7 @@ Counts compose with the repeat as usual: `3.` repeats over three lines when
 the original was linewise.
 
 ==============================================================================
-7. REGISTERS AS INTENTS                                   *conjurer-registers*
+8. REGISTERS AS INTENTS                                   *conjurer-registers*
 
 A named register given before the operator supplies the intent, and no
 prompt is shown:
@@ -188,7 +231,7 @@ was at cast time.
 The unnamed register (`""`) is ignored — a bare `~` always prompts.
 
 ==============================================================================
-8. COMMANDS                                                *conjurer-commands*
+9. COMMANDS                                                *conjurer-commands*
 
                                                                    *:Conjure*
 :[range]Conjure {intent}
@@ -221,8 +264,29 @@ The unnamed register (`""`) is ignored — a bare `~` always prompts.
                         argument, prompts for feedback. See
                         |conjurer-review|.
 
+                                                                *:ConjureAll*
+:ConjureAll {intent}    Conjure {intent} over every valid entry in the
+                        quickfix list, with bounded concurrency and
+                        same-file serialization. Idempotent: a re-run casts
+                        only pending and failed sites. With no argument,
+                        reuse the last aggregate intent. See
+                        |conjurer-aggregate|.
+
+                                                               *:ConjureNext*
+:ConjureNext {intent}   Conjure just the current quickfix entry, then
+                        advance to the next — a careful one-at-a-time
+                        pass. With no argument, reuse the last intent.
+                        See |conjurer-aggregate|.
+
+                                                         *:ConjureRejectSite*
+:ConjureRejectSite      Revert the conjured site under the cursor (in the
+                        quickfix window) or the current entry's site back
+                        to its original text. Cancels the request instead
+                        if the site is still running. See
+                        |conjurer-aggregate|.
+
 ==============================================================================
-9. CONFIGURATION                                      *conjurer-configuration*
+10. CONFIGURATION                                     *conjurer-configuration*
 
 setup({opts})                                               *conjurer.setup()*
 
@@ -266,6 +330,10 @@ Defaults: >lua
       -- Lines of surrounding buffer context sent with each request.
       context_lines = 40,
 
+      -- Aggregate conjuring (|:ConjureAll|): sites cast at once. Same-file
+      -- sites always serialize regardless. See |conjurer-aggregate|.
+      max_concurrent = 4,
+
       -- Stream the model's narration into the pending region.
       narration = true,
 
@@ -289,7 +357,7 @@ Defaults: >lua
     })
 <
 ==============================================================================
-10. PROVIDERS                                             *conjurer-providers*
+11. PROVIDERS                                             *conjurer-providers*
 
                                                       *conjurer-provider-auto*
 "auto" (the default) resolves at cast time by trying, in order: the
@@ -367,7 +435,7 @@ replacement — so protocol-unaware models still work, just without useful
 narration.
 
 ==============================================================================
-11. VIM IDIOMS                                               *conjurer-idioms*
+12. VIM IDIOMS                                               *conjurer-idioms*
 
 Conjurer aims to behave like a native operator in every detail:
 
@@ -390,7 +458,7 @@ you are typing elsewhere — so the cursor is never moved. Jump to the result
 yourself with `` `[ ``.
 
 ==============================================================================
-12. HIGHLIGHTS                                           *conjurer-highlights*
+13. HIGHLIGHTS                                           *conjurer-highlights*
 
                                                           *hl-ConjurerPending*
 ConjurerPending         The locked region while a conjure is in flight.
@@ -404,7 +472,7 @@ The completion flash uses the `flash_hl` config option (default
 |hl-IncSearch|).
 
 ==============================================================================
-13. PRIVACY                                                 *conjurer-privacy*
+14. PRIVACY                                                 *conjurer-privacy*
 
 Every cast sends the targeted snippet, the surrounding context
 (`context_lines` lines each side), the filetype, and your intent to the
@@ -414,14 +482,14 @@ buffers whose content must not leave your machine unless your provider is
 one you control.
 
 ==============================================================================
-14. HEALTH                                                   *conjurer-health*
+15. HEALTH                                                   *conjurer-health*
 
 Run |:checkhealth| conjurer to verify the environment: Neovim version,
 which provider "auto" resolves to, presence of the CLI executable and curl,
 and whether the API key variable is set.
 
 ==============================================================================
-15. LICENSE                                                 *conjurer-license*
+16. LICENSE                                                 *conjurer-license*
 
 MIT. See the LICENSE file in the repository root.
 

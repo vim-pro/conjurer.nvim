@@ -24,6 +24,9 @@ It is a real Vim operator, so it composes with everything you already know:
 | `:ConjureAccept` | keep the reviewed result and close the diff |
 | `:ConjureReject` | revert the reviewed result and close the diff |
 | `:ConjureRetry {feedback}` | revert, then re-conjure the region with feedback |
+| `:ConjureAll {intent}` | conjure the intent over every quickfix entry |
+| `:ConjureNext` | conjure the current quickfix entry and advance |
+| `:ConjureRejectSite` | revert the conjured site under the cursor |
 
 The motion comes first, then the intent prompt — so `~ip` feels exactly like
 `dip` or `g~ip`: pick the target, then cast.
@@ -73,6 +76,33 @@ for context, or edit the draft directly, while you decide:
 
 Closing the diff yourself without running one of those (`:tabclose`, etc.) is
 treated as a reject — the draft is reverted, not left in place.
+
+## Aggregate conjuring
+
+One intent, many sites. Populate the quickfix list however you like —
+`:grep`, `:vimgrep`, LSP references, `:cexpr` — prune it, then:
+
+```vim
+:vimgrep /print(/j lua/**/*.lua
+:ConjureAll convert these prints to structured logging
+```
+
+Casts run with bounded concurrency (`max_concurrent`), same-file sites
+serialize so splices never collide, and each site tracks its own state:
+pending → running → done / skipped / failed. A model that returns a site
+unchanged marks it skipped — false positives in the list are tolerated for
+free. Re-running `:ConjureAll` is idempotent (only pending and failed sites
+cast), so `:grepadd` + re-run grows the job naturally.
+
+Review happens in place: walk with `:cnext` (entries auto-track the edits),
+judge each site in its real surroundings, `:ConjureRejectSite` any you don't
+want. `:ConjureNext` casts one entry at a time for careful passes — and the
+aggregate intent feeds `~`/`.`, so spot-repairing a site the search missed is
+one motion away.
+
+With [quickfix.pro](https://github.com/vim-pro/quickfix.pro) installed, the
+list shows live per-site status signs, `<Tab>` expands a site into its
+before/after diff, and `dd` on a running site cancels its request.
 
 ## Bottled Vim idioms
 
@@ -173,6 +203,7 @@ require("conjurer").setup({
   max_tokens = 16000,
   thinking = true,                 -- adaptive thinking (better edits, more latency)
   context_lines = 40,              -- surrounding lines sent for context
+  max_concurrent = 4,              -- :ConjureAll sites cast at once
   narration = true,                -- stream model narration into the region
   flash_ms = 150,                  -- completion flash; false/0 disables
   flash_hl = "IncSearch",
