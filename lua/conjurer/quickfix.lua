@@ -120,8 +120,120 @@ local function refresh()
 end
 
 -- ---------------------------------------------------------------------------
+-- list context: the exemplar lives with the list it applies to
+-- ---------------------------------------------------------------------------
+
+-- The quickfix list context is shared state (other plugins may keep their own
+-- keys in it), so every write is a read-modify-write that touches only
+-- context.conjurer.
+local function update_conjurer_context(qf_id, fn)
+  local ctx = vim.fn.getqflist({ id = qf_id, context = 1 }).context
+  if type(ctx) ~= "table" then
+    ctx = {}
+  end
+  ctx.conjurer = type(ctx.conjurer) == "table" and ctx.conjurer or {}
+  fn(ctx.conjurer)
+  vim.fn.setqflist({}, "a", { id = qf_id, context = ctx })
+end
+
+-- The list's exemplar: { text, inferred }, or nil.
+local function get_exemplar(qf_id)
+  local ctx = vim.fn.getqflist({ id = qf_id, context = 1 }).context
+  local ex = type(ctx) == "table" and type(ctx.conjurer) == "table" and ctx.conjurer.exemplar
+  if type(ex) == "table" and type(ex.text) == "string" then
+    return ex
+  end
+  return nil
+end
+
+--- :ConjureExemplar — pin, clear, or show the current list's exemplar. With
+--- a range, the range's lines (from the current buffer) become the explicit
+--- exemplar: a finished example every site's cast is asked to match. With
+--- !, clear it (explicit or inferred). Bare, echo what's in effect.
+---@param first integer? 1-based range start (nil = no range given)
+---@param last integer?
+---@param bang boolean
+function M.set_exemplar(first, last, bang)
+  local list = vim.fn.getqflist({ id = 0 })
+  if bang then
+    update_conjurer_context(list.id, function(c)
+      c.exemplar = nil
+    end)
+    refresh()
+    vim.notify("[conjurer] exemplar cleared")
+    return
+  end
+  if first then
+    local lines = vim.api.nvim_buf_get_lines(0, first - 1, last, false)
+    update_conjurer_context(list.id, function(c)
+      c.exemplar = { text = table.concat(lines, "\n"), inferred = false }
+    end)
+    vim.notify(("[conjurer] exemplar set (%d line%s)"):format(#lines, #lines == 1 and "" or "s"))
+    return
+  end
+  local ex = get_exemplar(list.id)
+  if not ex then
+    vim.notify("[conjurer] no exemplar (pin one with :{range}ConjureExemplar, or cast a pilot site)")
+  else
+    vim.notify(("[conjurer] exemplar (%s):\n%s"):format(ex.inferred and "inferred from pilot site" or "explicit", ex.text))
+  end
+end
+
+-- ---------------------------------------------------------------------------
 -- casting
 -- ---------------------------------------------------------------------------
+
+-- Grep gives a match POINT; the edit unit is usually the enclosing
+-- multi-line structure. Expand a bare entry line to the smallest named
+-- treesitter node that STARTS on that line and spans multiple lines — the
+-- multi-line call gets fully edited, while the rule stays conservative:
+-- a mid-expression line (where nothing starts) stays a single line, and
+-- "smallest" never swallows an enclosing block. Returns 1-based inclusive
+-- first/last lines; falls back to the line itself without a parser.
+local function expand_region(buf, lnum)
+  if require("conjurer").config.region_expand == false then
+    return lnum, lnum
+  end
+  if not vim.api.nvim_buf_is_loaded(buf) then
+    return lnum, lnum
+  end
+  local ok, parser = pcall(vim.treesitter.get_parser, buf)
+  if not ok or not parser then
+    return lnum, lnum
+  end
+  local ok2, trees = pcall(function()
+    return parser:parse()
+  end)
+  if not ok2 or not trees or not trees[1] then
+    return lnum, lnum
+  end
+
+  local srow = lnum - 1
+  local best_end -- 0-based inclusive end row of the smallest multi-line node
+  local function walk(node)
+    for child in node:iter_children() do
+      local sr, _, er, ec = child:range()
+      if sr > srow then
+        break -- siblings are ordered; nothing later can start on our line
+      end
+      local endr = (ec == 0 and er - 1 or er)
+      if child:named() and sr == srow and endr > sr then
+        if not best_end or endr < best_end then
+          best_end = endr
+        end
+      end
+      if endr >= srow then
+        walk(child)
+      end
+    end
+  end
+  walk(trees[1]:root())
+
+  if best_end then
+    return lnum, best_end + 1
+  end
+  return lnum, lnum
+end
 
 -- Normalize a result the way apply() does (trailing blank line dropped) so a
 -- model that returns the snippet unchanged is detected as a no-op.
@@ -144,7 +256,14 @@ local function region_for_site(site)
     local ud = e.user_data
     if type(ud) == "table" and type(ud.conjurer) == "table" and ud.conjurer.site == site.id then
       if e.bufnr and e.bufnr > 0 and e.lnum and e.lnum > 0 then
-        return { kind = "line", srow = e.lnum - 1, erow = (e.end_lnum ~= 0 and e.end_lnum or e.lnum) }, e.text
+        local erow
+        if e.end_lnum ~= 0 then
+          erow = e.end_lnum -- an explicit range (:QfAdd, range-aware tools) is authoritative
+        else
+          local _, last = expand_region(e.bufnr, e.lnum)
+          erow = last
+        end
+        return { kind = "line", srow = e.lnum - 1, erow = erow }, e.text
       end
       return nil
     end
@@ -155,6 +274,11 @@ end
 -- Kick off one site's cast and, when it settles, invoke `next_fn` to pull the
 -- following eligible site off the queue.
 local function cast_site(site, intent, next_fn)
+  -- A site that settled (or was rejected) while queued must not cast — this
+  -- is what makes :ConjureRejectAll safe mid-batch.
+  if site.state ~= "pending" then
+    return next_fn()
+  end
   if not vim.api.nvim_buf_is_valid(site.buf) then
     site.state = "failed"
     site.err = "buffer gone"
@@ -217,8 +341,13 @@ local function cast_site(site, intent, next_fn)
   local retry = site.retry
   site.retry = nil
 
+  -- The list's exemplar, read fresh each cast so :ConjureAll, :ConjureNext
+  -- and :ConjureRetrySite all pick it up uniformly.
+  local exemplar = get_exemplar(site.qf_id)
+
   handle = operator.conjure_region(site.buf, region, intent, {
     note = note,
+    shared_context = exemplar and exemplar.text or nil,
     previous_attempt = retry and retry.previous_attempt or nil,
     feedback = retry and retry.feedback or nil,
     on_done = function(err, result)
@@ -304,6 +433,31 @@ function M.all(intent)
     return
   end
 
+  -- Exemplar harvest: an explicit exemplar stays pinned, but otherwise the
+  -- first settled pilot site's LIVE text (hand-edits included) becomes the
+  -- exemplar for this fan-out. The pilot workflow is :ConjureNext → judge,
+  -- fix → :ConjureAll; running the fan-out is the confirmation act. The
+  -- model's first draft alone never seeds the convention — the text has to
+  -- have passed through the user's hands-on-the-list review to get here.
+  local ex = get_exemplar(list.id)
+  if not ex or ex.inferred then
+    for _, entry in ipairs(list.items) do
+      local s = site_of_entry(entry)
+      if s and s.state == "done" then
+        local row = site_row(s)
+        if row then
+          local ok, cur = pcall(vim.api.nvim_buf_get_lines, s.buf, row, row + (s.applied_count or #s.snapshot), false)
+          if ok then
+            update_conjurer_context(list.id, function(c)
+              c.exemplar = { text = table.concat(cur, "\n"), inferred = true }
+            end)
+          end
+        end
+        break
+      end
+    end
+  end
+
   local queue = {}
   local accepted = {} -- per-buffer accepted regions, for overlap detection
   for i, entry in ipairs(list.items) do
@@ -311,8 +465,20 @@ function M.all(intent)
       local s = site_of_entry(entry)
       local castable = not s or s.state == "pending" or s.state == "failed"
       if castable then
+        -- Every eligible buffer is about to be edited anyway; loading it now
+        -- lets region expansion (and overlap detection over the expanded
+        -- regions) see real syntax instead of a bare line.
+        if not vim.api.nvim_buf_is_loaded(entry.bufnr) then
+          pcall(vim.fn.bufload, entry.bufnr)
+        end
         local srow = entry.lnum - 1
-        local erow = (entry.end_lnum ~= 0 and entry.end_lnum or entry.lnum)
+        local erow
+        if entry.end_lnum ~= 0 then
+          erow = entry.end_lnum -- explicit ranges are authoritative, never expanded
+        else
+          local _, last = expand_region(entry.bufnr, entry.lnum)
+          erow = last
+        end
         local region = { kind = "line", srow = srow, erow = erow }
 
         accepted[entry.bufnr] = accepted[entry.bufnr] or {}
@@ -404,6 +570,7 @@ function M.next(intent)
   s.buf = entry.bufnr
   s.kind = "line"
   s.qf_id = list.id
+  s.state = "pending"
 
   cast_site(s, intent, function() end)
 
@@ -497,6 +664,44 @@ function M.retry_site(feedback)
     end)
   else
     go(feedback)
+  end
+end
+
+--- The batch undo: unwind every site. Queued sites are dropped before
+--- running ones are cancelled (so the freed slots can't start them), running
+--- requests are actually killed, and applied sites revert to their exact
+--- pre-conjure text. Failed/skipped/already-rejected sites are left alone.
+function M.reject_all()
+  local dropped, cancelled, reverted = 0, 0, 0
+  -- Pass 1: drop everything still queued, so cancellations below can't pump
+  -- the queue into starting them.
+  for _, s in pairs(sites) do
+    if s.state == "pending" then
+      s.state = "rejected"
+      dropped = dropped + 1
+    end
+  end
+  -- Pass 2: kill in-flight requests.
+  for _, s in pairs(sites) do
+    if s.state == "running" and s.cancel then
+      s.cancel()
+      cancelled = cancelled + 1
+    end
+  end
+  -- Pass 3: revert what already landed.
+  for _, s in pairs(sites) do
+    if s.state == "done" and revert_site(s) then
+      s.state = "rejected"
+      reverted = reverted + 1
+    end
+  end
+  refresh()
+  if dropped + cancelled + reverted == 0 then
+    vim.notify("[conjurer] nothing to reject")
+  else
+    vim.notify(
+      ("[conjurer] batch rejected — %d reverted, %d cancelled, %d never cast"):format(reverted, cancelled, dropped)
+    )
   end
 end
 

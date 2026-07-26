@@ -23,6 +23,10 @@ Rules for the replacement:
 - If the intent cannot be applied to this snippet, return the snippet
   unchanged inside the RESULT block.
 
+If an "Exemplar" section is present, it is a finished, approved result for
+a sibling snippet of the same job. Match its style, naming, structure, and
+conventions exactly; deviate only where this snippet's content requires it.
+
 If a "Your previous attempt" and "Feedback on that attempt" section are
 present, the user rejected that attempt for the stated reason(s). Revise
 it according to the feedback rather than starting over from the original
@@ -66,6 +70,16 @@ function M.user(request)
       "<<<NOTE",
       request.note,
       "NOTE",
+    })
+  end
+  if request.shared_context and request.shared_context ~= "" then
+    vim.list_extend(lines, {
+      "",
+      "Exemplar — a finished example of the desired result for a sibling",
+      "snippet; match its style and conventions exactly:",
+      "<<<EXEMPLAR",
+      request.shared_context,
+      "EXEMPLAR",
     })
   end
   if request.previous_attempt then

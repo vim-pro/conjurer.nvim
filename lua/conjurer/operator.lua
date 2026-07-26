@@ -756,7 +756,9 @@ end
 --- forwarded to the model. `opts.previous_attempt`/`opts.feedback`
 --- (optional, set together) make this cast an iterative refinement: the
 --- model sees its rejected draft and the user's feedback.
----@param opts { on_done: fun(err: string?, result: string?)?, note: string?, previous_attempt: string?, feedback: string? }?
+--- `opts.shared_context` (optional) is a finished exemplar the result
+--- should match in style and conventions.
+---@param opts { on_done: fun(err: string?, result: string?)?, note: string?, previous_attempt: string?, feedback: string?, shared_context: string? }?
 function M.conjure_region(buf, region, intent, opts)
   local config = require("conjurer").config
   local on_done = opts and opts.on_done
@@ -799,6 +801,7 @@ function M.conjure_region(buf, region, intent, opts)
     context_before = before,
     context_after = after,
     note = opts and opts.note or nil,
+    shared_context = opts and opts.shared_context or nil,
     previous_attempt = opts and opts.previous_attempt or nil,
     feedback = opts and opts.feedback or nil,
   }

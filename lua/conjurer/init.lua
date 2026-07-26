@@ -9,6 +9,7 @@ local M = {}
 ---@field context_before string Buffer text preceding the snippet.
 ---@field context_after string Buffer text following the snippet.
 ---@field note string? Caller-supplied context about this snippet (e.g. the quickfix entry's message for a :make error).
+---@field shared_context string? A finished exemplar the result should match in style and conventions (aggregate casts).
 ---@field on_narrate fun(line: string)? Call with each narration line as it streams (main loop only).
 ---@field previous_attempt string? The model's previous (rejected) draft; present only on retry.
 ---@field feedback string? User feedback on the previous draft; present only on retry.
@@ -33,6 +34,7 @@ local M = {}
 ---@field thinking boolean
 ---@field context_lines integer
 ---@field max_concurrent integer Sites cast at once by :ConjureAll.
+---@field region_expand boolean Expand bare entries to the enclosing multi-line syntax node.
 ---@field narration boolean
 ---@field flash_ms integer|false
 ---@field flash_hl string
@@ -69,6 +71,11 @@ M.config = {
   -- Aggregate conjuring (:ConjureAll): how many sites to cast at once. Higher
   -- finishes sooner but fans out more concurrent provider processes.
   max_concurrent = 4,
+  -- Expand a bare quickfix entry to the smallest multi-line syntax node
+  -- starting on its line (a grep hit on a multi-line call edits the whole
+  -- call). Entries with an explicit end_lnum are never expanded. false =
+  -- always whole-line.
+  region_expand = true,
   -- Stream the model's narration into the pending region as virtual lines.
   narration = true,
   -- Flash the conjured text when it lands (like the on_yank highlight).
@@ -173,6 +180,24 @@ function M.setup(opts)
   end, {
     nargs = "*",
     desc = "Re-conjure the site under the cursor with feedback (prompts if omitted)",
+  })
+
+  vim.api.nvim_create_user_command("ConjureRejectAll", function()
+    require("conjurer.quickfix").reject_all()
+  end, {
+    desc = "Unwind the whole batch: drop queued, cancel running, revert applied sites",
+  })
+
+  vim.api.nvim_create_user_command("ConjureExemplar", function(cmd)
+    require("conjurer.quickfix").set_exemplar(
+      cmd.range > 0 and cmd.line1 or nil,
+      cmd.range > 0 and cmd.line2 or nil,
+      cmd.bang
+    )
+  end, {
+    range = true,
+    bang = true,
+    desc = "Pin the range as this list's exemplar (! clears, bare shows)",
   })
 end
 
