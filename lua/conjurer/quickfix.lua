@@ -178,6 +178,9 @@ local function cast_site(site, intent, next_fn)
   -- even if a subsequent same-file cast shifts lines above it. The extent is
   -- the applied line count (set in on_done), not a growing end mark — an
   -- end-of-line end mark would absorb later edits and drift.
+  if site.extmark then
+    pcall(vim.api.nvim_buf_del_extmark, site.buf, ns, site.extmark) -- re-cast: drop the stale anchor
+  end
   site.extmark = vim.api.nvim_buf_set_extmark(site.buf, ns, region.srow, 0, { right_gravity = false })
   site.snapshot = vim.api.nvim_buf_get_lines(site.buf, region.srow, region.erow, false)
   site.applied_count = #site.snapshot
@@ -209,8 +212,15 @@ local function cast_site(site, intent, next_fn)
     note = entry_text
   end
 
+  -- A one-shot retry payload (set by retry_site): the model revises its own
+  -- rejected draft instead of starting over.
+  local retry = site.retry
+  site.retry = nil
+
   handle = operator.conjure_region(site.buf, region, intent, {
     note = note,
+    previous_attempt = retry and retry.previous_attempt or nil,
+    feedback = retry and retry.feedback or nil,
     on_done = function(err, result)
       if settled then
         return
@@ -403,6 +413,21 @@ function M.next(intent)
   refresh()
 end
 
+-- Put a site's original snapshot back at its tracked position. Returns true
+-- on success.
+local function revert_site(s)
+  local row = site_row(s)
+  if not row then
+    return false
+  end
+  local n = s.applied_count or #s.snapshot
+  local ok = pcall(vim.api.nvim_buf_set_lines, s.buf, row, row + n, false, s.snapshot)
+  if ok then
+    s.applied_count = #s.snapshot
+  end
+  return ok
+end
+
 --- Revert the site under the cursor back to its pre-conjure snapshot.
 function M.reject()
   local s = site_under_cursor()
@@ -414,16 +439,65 @@ function M.reject()
     s.cancel()
     return
   end
-  local row = site_row(s)
-  if not row then
+  if not revert_site(s) then
     vim.notify("[conjurer] nothing to revert", vim.log.levels.WARN)
     return
   end
-  local n = s.applied_count or #s.snapshot
-  pcall(vim.api.nvim_buf_set_lines, s.buf, row, row + n, false, s.snapshot)
-  s.applied_count = #s.snapshot
   s.state = "rejected"
   refresh()
+end
+
+--- Re-conjure the site under the cursor: the model sees its own applied
+--- draft (as it currently reads, hand-edits included) plus your feedback,
+--- and revises rather than starting over. The site reverts to its original
+--- text while the retry is in flight.
+---@param feedback string?
+function M.retry_site(feedback)
+  local s = site_under_cursor()
+  if not s then
+    vim.notify("[conjurer] no conjured site here", vim.log.levels.WARN)
+    return
+  end
+  if s.state ~= "done" then
+    vim.notify(
+      "[conjurer] only an applied (done) site can be retried — re-run :ConjureAll for failed ones",
+      vim.log.levels.WARN
+    )
+    return
+  end
+
+  local function go(fb)
+    local row = site_row(s)
+    if not row then
+      vim.notify("[conjurer] site was lost", vim.log.levels.WARN)
+      return
+    end
+    local n = s.applied_count or #s.snapshot
+    local ok, current = pcall(vim.api.nvim_buf_get_lines, s.buf, row, row + n, false)
+    if not ok then
+      vim.notify("[conjurer] site was lost", vim.log.levels.WARN)
+      return
+    end
+    local previous_attempt = table.concat(current, "\n")
+    if not revert_site(s) then
+      vim.notify("[conjurer] could not revert the site for retry", vim.log.levels.WARN)
+      return
+    end
+    s.retry = { previous_attempt = previous_attempt, feedback = fb }
+    s.state = "pending"
+    refresh()
+    cast_site(s, s.intent or last_intent, function() end)
+  end
+
+  if feedback == nil or feedback == "" then
+    vim.ui.input({ prompt = "Feedback: " }, function(fb)
+      if fb and fb ~= "" then
+        go(fb)
+      end
+    end)
+  else
+    go(feedback)
+  end
 end
 
 --- Summary notification (used when quickfix.pro isn't installed to surface

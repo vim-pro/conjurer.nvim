@@ -187,9 +187,11 @@ run again" needs no special handling.
 
 Reviewing happens in place, at your pace: walk the list with |:cnext| (entry
 positions auto-adjust as buffers change, so you land on the applied text),
-judge each site in its real surroundings, and |:ConjureRejectSite| any you
-don't want — it restores that site's original text exactly. `review = true`
-does not open diff tabs for aggregate casts; the list is the review surface.
+judge each site in its real surroundings, |:ConjureRejectSite| any you don't
+want — it restores that site's original text exactly — or
+|:ConjureRetrySite| with feedback to have the model revise its own draft.
+`review = true` does not open diff tabs for aggregate casts; the list is the
+review surface.
 
 |:ConjureNext| casts just the current entry and advances, for a careful
 one-at-a-time pass. The aggregate intent also becomes the operator's
@@ -283,6 +285,16 @@ The unnamed register (`""`) is ignored — a bare `~` always prompts.
                         quickfix window) or the current entry's site back
                         to its original text. Cancels the request instead
                         if the site is still running. See
+                        |conjurer-aggregate|.
+
+                                                          *:ConjureRetrySite*
+:ConjureRetrySite {feedback}
+                        Re-conjure the site under the cursor: the model
+                        sees its applied draft (as it currently reads,
+                        hand-edits included) and {feedback}, and revises
+                        rather than starting over. The site shows its
+                        original text while the retry is in flight. With
+                        no argument, prompts for feedback. See
                         |conjurer-aggregate|.
 
 ==============================================================================

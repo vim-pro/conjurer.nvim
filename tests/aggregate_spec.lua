@@ -212,6 +212,31 @@ answer("local x = 1")
 H.eq(calls[2].req.note, nil, "grep-style entry text (same as the line) is not forwarded")
 answer("print('fine')")
 
+-- 9c) retry-with-feedback on a site: the model sees its applied draft (as it
+-- currently reads, hand-edits included) plus the feedback; the site reverts
+-- while the retry is in flight, and the new draft applies.
+qf._reset()
+calls = {}
+local rt = buf_with({ "keep", "orig", "tail" })
+vim.api.nvim_set_current_buf(rt)
+vim.fn.setqflist({}, " ", { items = { { bufnr = rt, lnum = 2, text = "site" } } })
+qf.all("change it")
+answer("DRAFT V1")
+H.eq(vim.api.nvim_buf_get_lines(rt, 1, 2, false)[1], "DRAFT V1", "first draft applied")
+-- hand-edit the applied draft, then retry with feedback from the qf window
+vim.api.nvim_buf_set_lines(rt, 1, 2, false, { "DRAFT V1 TWEAKED" })
+vim.cmd("copen")
+vim.api.nvim_win_set_cursor(vim.fn.getqflist({ winid = 1 }).winid, { 1, 0 })
+local before_retry = #calls
+qf.retry_site("shorter please")
+H.eq(#calls, before_retry + 1, "retry issued a new provider call")
+H.eq(calls[#calls].req.previous_attempt, "DRAFT V1 TWEAKED", "retry sends the LIVE draft, hand-edits included")
+H.eq(calls[#calls].req.feedback, "shorter please", "retry sends the feedback")
+H.eq(vim.api.nvim_buf_get_lines(rt, 1, 2, false)[1], "orig", "site reverted while the retry is in flight")
+answer("V2")
+H.eq(vim.api.nvim_buf_get_lines(rt, 1, 2, false)[1], "V2", "revised draft applied")
+vim.cmd("cclose")
+
 -- 10) review = true does NOT open review tabs for driver-run casts: the
 -- driver owns per-site review; N casts must not become N tabpages. (This
 -- rule was born in the review+aggregate merge — pin it.)

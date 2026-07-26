@@ -753,8 +753,10 @@ end
 --- error string on failure — for callers (like the aggregate driver) that
 --- sequence work across many casts. `opts.note` (optional) is caller
 --- context about the snippet (e.g. the quickfix entry's diagnostic),
---- forwarded to the model.
----@param opts { on_done: fun(err: string?, result: string?)?, note: string? }?
+--- forwarded to the model. `opts.previous_attempt`/`opts.feedback`
+--- (optional, set together) make this cast an iterative refinement: the
+--- model sees its rejected draft and the user's feedback.
+---@param opts { on_done: fun(err: string?, result: string?)?, note: string?, previous_attempt: string?, feedback: string? }?
 function M.conjure_region(buf, region, intent, opts)
   local config = require("conjurer").config
   local on_done = opts and opts.on_done
@@ -797,6 +799,8 @@ function M.conjure_region(buf, region, intent, opts)
     context_before = before,
     context_after = after,
     note = opts and opts.note or nil,
+    previous_attempt = opts and opts.previous_attempt or nil,
+    feedback = opts and opts.feedback or nil,
   }
   if config.narration then
     request.on_narrate = function(line)

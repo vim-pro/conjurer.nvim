@@ -27,6 +27,7 @@ It is a real Vim operator, so it composes with everything you already know:
 | `:ConjureAll {intent}` | conjure the intent over every quickfix entry |
 | `:ConjureNext` | conjure the current quickfix entry and advance |
 | `:ConjureRejectSite` | revert the conjured site under the cursor |
+| `:ConjureRetrySite {feedback}` | have the model revise the site's draft |
 
 The motion comes first, then the intent prompt — so `~ip` feels exactly like
 `dip` or `g~ip`: pick the target, then cast.

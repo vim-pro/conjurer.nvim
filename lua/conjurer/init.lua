@@ -167,6 +167,13 @@ function M.setup(opts)
   end, {
     desc = "Revert the conjured quickfix site under the cursor",
   })
+
+  vim.api.nvim_create_user_command("ConjureRetrySite", function(cmd)
+    require("conjurer.quickfix").retry_site(cmd.args)
+  end, {
+    nargs = "*",
+    desc = "Re-conjure the site under the cursor with feedback (prompts if omitted)",
+  })
 end
 
 --- Resolve the configured provider to a request function.
