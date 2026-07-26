@@ -144,6 +144,15 @@ local function get_region_text(buf, region)
   return vim.api.nvim_buf_get_text(buf, region.srow, region.scol, region.erow, region.ecol, {})
 end
 
+-- The buffer's cwd-relative path, for the model's benefit ("" if unnamed).
+local function buf_path(buf)
+  local name = vim.api.nvim_buf_get_name(buf)
+  if name == "" then
+    return ""
+  end
+  return vim.fn.fnamemodify(name, ":.")
+end
+
 --- Surrounding context so the model understands the boundary — including,
 --- for charwise regions, the partial start/end lines outside the snippet.
 local function get_context(buf, region, n)
@@ -670,6 +679,7 @@ local function do_retry(cast, feedback)
   local request = {
     config = config,
     intent = cast.intent,
+    path = buf_path(cast.buf),
     filetype = vim.bo[cast.buf].filetype,
     text = table.concat(cast.snapshot, "\n"),
     context_before = before,
@@ -741,8 +751,10 @@ end
 --- it, splice the result when it lands. `opts.on_done(err, result)` (optional)
 --- fires once the cast resolves — after the splice on success, or with an
 --- error string on failure — for callers (like the aggregate driver) that
---- sequence work across many casts.
----@param opts { on_done: fun(err: string?, result: string?) }?
+--- sequence work across many casts. `opts.note` (optional) is caller
+--- context about the snippet (e.g. the quickfix entry's diagnostic),
+--- forwarded to the model.
+---@param opts { on_done: fun(err: string?, result: string?)?, note: string? }?
 function M.conjure_region(buf, region, intent, opts)
   local config = require("conjurer").config
   local on_done = opts and opts.on_done
@@ -779,10 +791,12 @@ function M.conjure_region(buf, region, intent, opts)
   local request = {
     config = config,
     intent = intent,
+    path = buf_path(buf),
     filetype = vim.bo[buf].filetype,
     text = table.concat(snapshot, "\n"),
     context_before = before,
     context_after = after,
+    note = opts and opts.note or nil,
   }
   if config.narration then
     request.on_narrate = function(line)

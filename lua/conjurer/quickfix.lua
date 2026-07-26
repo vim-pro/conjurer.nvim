@@ -135,14 +135,16 @@ end
 
 -- The current linewise region for a site, from its (auto-adjusted) quickfix
 -- entry — recomputed at launch time so a prior cast in the same file that
--- changed line counts doesn't leave this site's region stale.
+-- changed line counts doesn't leave this site's region stale. Also returns
+-- the entry's text: for :make/diagnostic lists that's the message that
+-- flagged the site, which the model should see.
 local function region_for_site(site)
   local list = vim.fn.getqflist({ id = site.qf_id, items = 1 })
   for _, e in ipairs(list.items) do
     local ud = e.user_data
     if type(ud) == "table" and type(ud.conjurer) == "table" and ud.conjurer.site == site.id then
       if e.bufnr and e.bufnr > 0 and e.lnum and e.lnum > 0 then
-        return { kind = "line", srow = e.lnum - 1, erow = (e.end_lnum ~= 0 and e.end_lnum or e.lnum) }
+        return { kind = "line", srow = e.lnum - 1, erow = (e.end_lnum ~= 0 and e.end_lnum or e.lnum) }, e.text
       end
       return nil
     end
@@ -163,7 +165,7 @@ local function cast_site(site, intent, next_fn)
     pcall(vim.fn.bufload, site.buf)
   end
 
-  local region = region_for_site(site)
+  local region, entry_text = region_for_site(site)
   if not region then
     site.state = "failed"
     site.err = "entry lost from the list"
@@ -198,7 +200,17 @@ local function cast_site(site, intent, next_fn)
     next_fn()
   end
 
+  -- Pass the entry's message to the model only when it says something the
+  -- snippet doesn't: for grep-style lists the text IS the matched line
+  -- (redundant), for :make/diagnostic lists it's the error that flagged
+  -- the site (essential).
+  local note
+  if entry_text and vim.trim(entry_text) ~= vim.trim(site.snapshot[1] or "") then
+    note = entry_text
+  end
+
   handle = operator.conjure_region(site.buf, region, intent, {
+    note = note,
     on_done = function(err, result)
       if settled then
         return

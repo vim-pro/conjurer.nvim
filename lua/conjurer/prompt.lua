@@ -38,6 +38,11 @@ end
 function M.user(request)
   local lines = {
     "Filetype: " .. (request.filetype ~= "" and request.filetype or "unknown"),
+  }
+  if request.path and request.path ~= "" then
+    table.insert(lines, "File: " .. request.path)
+  end
+  vim.list_extend(lines, {
     "",
     "Context before the snippet:",
     "<<<CONTEXT_BEFORE",
@@ -53,7 +58,16 @@ function M.user(request)
     "<<<SNIPPET",
     request.text,
     "SNIPPET",
-  }
+  })
+  if request.note and request.note ~= "" then
+    vim.list_extend(lines, {
+      "",
+      "Note about this snippet (e.g. the diagnostic that flagged it):",
+      "<<<NOTE",
+      request.note,
+      "NOTE",
+    })
+  end
   if request.previous_attempt then
     vim.list_extend(lines, {
       "",

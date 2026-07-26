@@ -3,10 +3,12 @@ local M = {}
 ---@class conjurer.Request
 ---@field config conjurer.Config
 ---@field intent string Natural-language instruction for the transform.
+---@field path string Target file path, cwd-relative ("" for unnamed buffers).
 ---@field filetype string 'filetype' of the target buffer ("" if unset).
 ---@field text string The snippet to transform.
 ---@field context_before string Buffer text preceding the snippet.
 ---@field context_after string Buffer text following the snippet.
+---@field note string? Caller-supplied context about this snippet (e.g. the quickfix entry's message for a :make error).
 ---@field on_narrate fun(line: string)? Call with each narration line as it streams (main loop only).
 ---@field previous_attempt string? The model's previous (rejected) draft; present only on retry.
 ---@field feedback string? User feedback on the previous draft; present only on retry.

@@ -186,6 +186,32 @@ answer("X1!")
 H.eq(vim.api.nvim_buf_get_lines(n, 0, 1, false)[1], "X1!", "current entry conjured")
 H.eq(vim.fn.getqflist({ idx = 0 }).idx, 2, "idx advanced to the next entry")
 
+-- 9b) request context: the file path rides along, and the entry's message is
+-- forwarded as a note only when it differs from the matched line (a :make
+-- diagnostic yes, a grep hit no).
+qf._reset()
+calls = {}
+local ctx = buf_with({ "local x = nil + 1", "print('fine')" })
+vim.api.nvim_buf_set_name(ctx, "ctxdemo.lua")
+vim.fn.setqflist({}, " ", {
+  items = {
+    -- diagnostic-style: text is an error message, not the line
+    { bufnr = ctx, lnum = 1, text = "E5108: attempt to perform arithmetic on a nil value" },
+    -- grep-style: text is the matched line itself
+    { bufnr = ctx, lnum = 2, text = "print('fine')" },
+  },
+})
+qf.all("fix it")
+H.eq(calls[1].req.path, "ctxdemo.lua", "request carries the file path")
+H.eq(
+  calls[1].req.note,
+  "E5108: attempt to perform arithmetic on a nil value",
+  "diagnostic message forwarded as the note"
+)
+answer("local x = 1")
+H.eq(calls[2].req.note, nil, "grep-style entry text (same as the line) is not forwarded")
+answer("print('fine')")
+
 -- 10) review = true does NOT open review tabs for driver-run casts: the
 -- driver owns per-site review; N casts must not become N tabpages. (This
 -- rule was born in the review+aggregate merge — pin it.)
