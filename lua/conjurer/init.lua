@@ -8,6 +8,8 @@ local M = {}
 ---@field context_before string Buffer text preceding the snippet.
 ---@field context_after string Buffer text following the snippet.
 ---@field on_narrate fun(line: string)? Call with each narration line as it streams (main loop only).
+---@field previous_attempt string? The model's previous (rejected) draft; present only on retry.
+---@field feedback string? User feedback on the previous draft; present only on retry.
 
 ---@class conjurer.Handle
 ---@field cancel fun() Abort the in-flight request.
@@ -34,6 +36,7 @@ local M = {}
 ---@field flash_hl string
 ---@field keymaps conjurer.Keymaps
 ---@field system_prompt string?
+---@field review boolean Review the result in a diff before applying.
 
 ---@type conjurer.Config
 M.config = {
@@ -77,6 +80,10 @@ M.config = {
   },
   -- Override the built-in system prompt (string), or nil for the default.
   system_prompt = nil,
+  -- Open a native Vim diff to review the result before it's spliced in,
+  -- instead of auto-applying. See |conjurer-review|. Off by default to
+  -- preserve the fast auto-apply flow.
+  review = false,
 }
 
 --- Merge user options into the defaults, define keymaps and commands.
@@ -116,6 +123,25 @@ function M.setup(opts)
     operator.cancel()
   end, {
     desc = "Cancel all in-flight conjures in this buffer",
+  })
+
+  vim.api.nvim_create_user_command("ConjureAccept", function()
+    operator.accept()
+  end, {
+    desc = "Apply the reviewed result and close the diff",
+  })
+
+  vim.api.nvim_create_user_command("ConjureReject", function()
+    operator.reject()
+  end, {
+    desc = "Discard the reviewed result and close the diff",
+  })
+
+  vim.api.nvim_create_user_command("ConjureRetry", function(cmd)
+    operator.retry(cmd.args)
+  end, {
+    nargs = "*",
+    desc = "Re-conjure the reviewed region with feedback (prompts if omitted)",
   })
 
   -- Aggregate conjuring over the quickfix list. Populate the list however you

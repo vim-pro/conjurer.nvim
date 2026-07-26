@@ -186,7 +186,24 @@ answer("X1!")
 H.eq(vim.api.nvim_buf_get_lines(n, 0, 1, false)[1], "X1!", "current entry conjured")
 H.eq(vim.fn.getqflist({ idx = 0 }).idx, 2, "idx advanced to the next entry")
 
--- 10) integration with quickfix.pro — only when the sibling checkout exists
+-- 10) review = true does NOT open review tabs for driver-run casts: the
+-- driver owns per-site review; N casts must not become N tabpages. (This
+-- rule was born in the review+aggregate merge — pin it.)
+qf._reset()
+calls = {}
+require("conjurer").setup({ review = true })
+local rv = buf_with({ "r1", "r2" })
+vim.api.nvim_set_current_buf(rv)
+vim.fn.setqflist({}, " ", { items = { { bufnr = rv, lnum = 1, text = "a" }, { bufnr = rv, lnum = 2, text = "b" } } })
+local tabs_before = #vim.api.nvim_list_tabpages()
+qf.all("go")
+answer("R1!")
+answer("R2!")
+H.eq(#vim.api.nvim_list_tabpages(), tabs_before, "no review tabs opened for driven casts despite review=true")
+H.eq(vim.api.nvim_buf_get_lines(rv, 0, 1, false)[1], "R1!", "driven cast auto-applied under review=true")
+require("conjurer").setup({ review = false })
+
+-- 11) integration with quickfix.pro — only when the sibling checkout exists
 -- next to this repo. Keeps conjure's own CI green without it.
 local repo = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
 local sibling = vim.fn.fnamemodify(repo, ":h") .. "/quickfix"

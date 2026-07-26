@@ -21,6 +21,9 @@ It is a real Vim operator, so it composes with everything you already know:
 | `~` (visual) | conjure the selection |
 | `:'<,'>Conjure add error handling` | conjure a range with an inline intent |
 | `:ConjureCancel` | abort everything in flight in this buffer |
+| `:ConjureAccept` | keep the reviewed result and close the diff |
+| `:ConjureReject` | revert the reviewed result and close the diff |
+| `:ConjureRetry {feedback}` | revert, then re-conjure the region with feedback |
 
 The motion comes first, then the intent prompt — so `~ip` feels exactly like
 `dip` or `g~ip`: pick the target, then cast.
@@ -50,6 +53,26 @@ local function fetch_user(id)          ← dimmed, locked
 Nothing touches the buffer until the final splice, so `:ConjureCancel` always
 leaves the file byte-identical — and the finished conjure is still a single
 undo step.
+
+## Reviewing before applying
+
+Set `review = true` and a finished conjure lands in the buffer right away,
+then opens a native two-way diff in a new tabpage: a frozen snapshot of the
+whole file on the left, your real, already-patched buffer on the right —
+`]c`/`[c`/`do`/`dp` all work natively. The right side isn't a copy, so the
+region is no longer locked once a draft exists — scroll anywhere in the file
+for context, or edit the draft directly, while you decide:
+
+```
+:ConjureAccept              keep whatever's in the buffer, close the diff
+:ConjureReject               revert to the exact pre-conjure text
+:ConjureRetry fix the edge case   revert, then send the draft + feedback
+                             back to the model, which revises rather than
+                             starting over
+```
+
+Closing the diff yourself without running one of those (`:tabclose`, etc.) is
+treated as a reject — the draft is reverted, not left in place.
 
 ## Bottled Vim idioms
 
@@ -158,6 +181,7 @@ require("conjurer").setup({
     line = "~~",
   },
   system_prompt = nil,             -- string to override the built-in prompt
+  review = false,                  -- review results in a diff before applying
 })
 ```
 
