@@ -181,12 +181,38 @@ end
 -- the region non-editable by restoring the snapshot whenever it changes.
 -- ---------------------------------------------------------------------------
 
+-- What the reader sees of an intent.
+--
+-- An intent is arbitrary text. Typed at the prompt it is a short phrase, but
+-- a caller driving conjurer programmatically can send a great deal more —
+-- scry's drafting pass hands over a whole grammar specification, newlines
+-- and all. virt_text is ONE line: an embedded newline renders as `^@` and
+-- the remainder runs off the right of the window, so a multi-line intent
+-- turned the narration into a wall of control characters.
+--
+-- So the narration shows the intent's FIRST line, with its internal runs of
+-- whitespace collapsed, clipped to something that fits. The model still
+-- receives the intent whole — this trims what is displayed, never what is
+-- sent.
+local HEADLINE_MAX = 68
+local function headline(intent)
+  local first = tostring(intent or ""):match("^[^\r\n]*") or ""
+  first = first:gsub("%s+", " "):gsub("^%s", ""):gsub("%s$", "")
+  local multiline = tostring(intent or ""):find("[\r\n]") ~= nil
+  if vim.fn.strdisplaywidth(first) > HEADLINE_MAX then
+    return vim.fn.strcharpart(first, 0, HEADLINE_MAX - 1) .. "…"
+  end
+  -- A clipped first line already reads as "there is more"; an intent whose
+  -- first line fits but has more lines behind it needs to say so itself.
+  return multiline and (first .. " …") or first
+end
+
 local function narration_virt(cast)
   if cast.state == "reviewing" then
-    return { { { " 👀 reviewing: " .. cast.intent, "ConjurerNarration" } } }
+    return { { { " 👀 reviewing: " .. headline(cast.intent), "ConjurerNarration" } } }
   end
   local lines = {
-    { { " ✨ conjuring: " .. cast.intent, "ConjurerNarration" } },
+    { { " ✨ conjuring: " .. headline(cast.intent), "ConjurerNarration" } },
   }
   local n = #cast.narration
   for i = math.max(1, n - NARRATION_LINES + 1), n do
@@ -366,7 +392,10 @@ local function narrate(cast, line)
   if cast.done then
     return
   end
-  table.insert(cast.narration, line)
+  -- Same one-line rule as the headline above: a provider chunk carrying a
+  -- newline would render as ^@ and drag the rest of the narration off the
+  -- window, so it is flattened on the way in.
+  table.insert(cast.narration, (tostring(line):gsub("[\r\n]+", " ")))
   local srow, scol, erow, ecol = bounds(cast)
   if srow then
     place_mark(cast, srow, scol, erow, ecol)

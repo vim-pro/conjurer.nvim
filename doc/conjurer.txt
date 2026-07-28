@@ -103,7 +103,11 @@ While a conjure is in flight:
   editable.
 
 - The model narrates what it is doing, and the narration streams into the
-  region as virtual lines (|hl-ConjurerNarration|): >
+  region as virtual lines (|hl-ConjurerNarration|). The first line shows the
+  intent, CLIPPED: virtual text is a single line, so a long or multi-line
+  intent — a plugin driving |conjurer-api| may send a whole specification —
+  would otherwise render its newlines as `^@` and run off the window. Only
+  the display is trimmed; the model always receives the intent whole. >
 
     local function fetch_user(id)          ← dimmed, locked
      ✨ conjuring: add error handling

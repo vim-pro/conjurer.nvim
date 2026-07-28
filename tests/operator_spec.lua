@@ -81,4 +81,44 @@ vim.api.nvim_win_set_cursor(0, { 1, 0 })
 H.feed("g~iw")
 H.eq(H.lines()[1], "ABC", "g~ intact")
 
+-- 9) THE NARRATION IS ONE LINE.
+--
+-- An intent is arbitrary text, and a caller driving conjurer
+-- programmatically can send a lot of it — scry's drafting pass hands over a
+-- whole grammar specification with newlines in it. virt_text is a single
+-- line, so an embedded newline renders as a literal ^@ and the rest runs off
+-- the window. What is DISPLAYED gets clipped; what is SENT must not be.
+local held
+require("conjurer").setup({
+  provider = function(req, cb)
+    held = { req = req, cb = cb } -- never calls back: the cast stays pending
+  end,
+})
+vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "target line" })
+local LONG = table.concat({
+  "Replace this block with `feature` entries in scry's map grammar,",
+  "describing what the listed files make possible. Read them.",
+  "",
+  "GRAMMAR (indentation is the grammar):",
+  "  feature <a statement of something the user can accomplish>",
+}, "\n")
+require("conjurer.operator").conjure_region(buf, { kind = "line", srow = 0, erow = 1 }, LONG)
+
+local shown
+for _, line in ipairs(vim.split(H.virt_text(buf), "\n", { plain = true })) do
+  if line:find("conjuring", 1, true) then
+    shown = line
+  end
+end
+H.eq(type(shown), "string", "the pending narration rendered")
+H.eq(shown:find("\r", 1, true), nil, "no carriage return survives into virt_text")
+H.eq(shown:find("Replace this block", 1, true) ~= nil, true, "the first line still reads as itself")
+H.eq(shown:find("GRAMMAR", 1, true), nil, "later lines are not smuggled onto the same row")
+H.eq(vim.fn.strdisplaywidth(shown) <= 88, true, "clipped to the window: " .. shown)
+
+-- and the MODEL still received the whole thing
+H.eq(type(held), "table", "the provider was called")
+H.eq(held.req.intent, LONG, "byte-identical — display was trimmed, not the payload")
+require("conjurer.operator").cancel()
+
 H.done(("operator_spec PASS (%d provider calls, %d prompts)"):format(calls, prompts))
