@@ -34,6 +34,8 @@
   --gutter: #3c3752;
   --gold: #d8b45a;
   --violet: #b79df7;
+  --ok: #7fc98a;
+  --err: #e0777f;
   --narration: #e8d9a8;
   --syn-kw: #b79df7;
   --syn-fn: #7cc7e8;
@@ -61,7 +63,7 @@ code { font-family: var(--mono); }
    design width. The padding trick keeps backgrounds/borders full-bleed
    without wrapping every section in an extra div. */
 .shell { width: 100%; }
-nav, .hero, .laws, .familiars, .circle-sect, .cta {
+nav, .hero, .laws, .many, .familiars, .circle-sect, .cta {
   padding-inline: max(48px, calc((100% - 1120px) / 2 + 48px));
 }
 .scry { padding-inline: max(24px, calc((100% - 1120px) / 2 + 88px)); }
@@ -205,6 +207,46 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
 .law .b { font-size: 14px; line-height: 1.6; color: var(--muted); }
 .law .b code { color: var(--text); }
 
+/* ---------- the many-handed cast (aggregate) ---------- */
+.many { padding-block: 56px 8px; }
+.qf {
+  max-width: 880px; margin: 0 auto 18px;
+  background: var(--panel);
+  border: 1px solid rgba(183,157,247,0.2);
+  border-radius: 14px; overflow: hidden;
+  box-shadow: 0 0 80px rgba(124,90,220,0.14), 0 24px 70px rgba(0,0,0,0.5);
+}
+.qf-bar {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding: 12px 18px; border-bottom: 1px solid rgba(233,228,242,0.07);
+  font-family: var(--mono); font-size: 13px; color: var(--muted);
+}
+.qf-bar .cm { color: var(--gold); }
+.qf-rows { font-family: var(--mono); font-size: 13.5px; line-height: 1.95; padding: 10px 0; overflow-x: auto; }
+.qf-row { display: flex; gap: 16px; padding: 0 18px; white-space: pre; }
+.qf-row .st { width: 11px; flex: none; text-align: center; }
+.qf-row .fl { color: var(--faint); width: 118px; flex: none; }
+.qf-row .ln { color: var(--gutter); width: 26px; text-align: right; flex: none; }
+.qf-row .tx { color: var(--muted); }
+.qf-row.settled .tx { color: var(--text); }
+.qf-row .note { color: var(--err); font-style: italic; }
+.st.ok { color: var(--ok); }
+.st.no { color: var(--err); }
+.st.wa { color: var(--gold); }
+.st.run { color: var(--syn-fn); }
+.st.pd { color: var(--gutter); }
+.qf-legend {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 20px;
+  padding: 11px 18px 4px;
+  border-top: 1px solid rgba(233,228,242,0.07);
+  font-family: var(--mono); font-size: 12px; color: var(--faint);
+}
+.qf-legend .st { font-style: normal; margin-right: 5px; }
+.qf-note {
+  padding: 2px 18px 13px; text-align: center;
+  font-family: var(--mono); font-size: 11.5px; color: var(--faint); text-wrap: pretty;
+}
+
 /* ---------- familiars (providers) ---------- */
 .familiars { padding-block: 48px 64px; }
 .familiar-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; max-width: 820px; margin: 0 auto; }
@@ -256,7 +298,7 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
 
 /* ---------- responsive ---------- */
 @media (max-width: 900px) {
-  nav, .hero, .scry, .laws, .familiars, .circle-sect, .cta { padding-inline: 24px; }
+  nav, .hero, .scry, .laws, .many, .familiars, .circle-sect, .cta { padding-inline: 24px; }
   nav { padding-block: 16px; }
   .nav-links .optional { display: none; }
   .hero { padding-block: 64px 48px; }
@@ -266,6 +308,7 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
   .scry { padding-block: 16px 24px; }
   .laws { padding-block: 48px 16px; }
   .law-grid { grid-template-columns: 1fr; }
+  .many { padding-block: 40px 8px; }
   .familiars { padding-block: 32px 48px; }
   .familiar-grid { grid-template-columns: 1fr; }
   .circle-sect { padding-block: 56px 48px; }
@@ -299,6 +342,7 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
   </a>
   <div class="nav-links">
     <a class="optional" href="https://github.com/vim-pro/conjurer.nvim/blob/main/doc/conjurer.txt"><svg class="gh-icon" viewBox="0 0 128 128" aria-hidden="true"><g fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M64 5.103c-33.347 0-60.388 27.035-60.388 60.388 0 26.682 17.303 49.317 41.297 57.303 3.017.56 4.125-1.31 4.125-2.905 0-1.44-.056-6.197-.082-11.243-16.8 3.653-20.345-7.125-20.345-7.125-2.747-6.98-6.705-8.836-6.705-8.836-5.48-3.748.413-3.67.413-3.67 6.063.425 9.257 6.223 9.257 6.223 5.386 9.23 14.127 6.562 17.573 5.02.542-3.903 2.107-6.568 3.834-8.076-13.413-1.525-27.514-6.704-27.514-29.843 0-6.593 2.36-11.98 6.223-16.21-.628-1.52-2.695-7.662.584-15.98 0 0 5.07-1.623 16.61 6.19C53.7 35 58.867 34.327 64 34.304c5.13.023 10.3.694 15.127 2.033 11.526-7.813 16.59-6.19 16.59-6.19 3.287 8.317 1.22 14.46.593 15.98 3.872 4.23 6.215 9.617 6.215 16.21 0 23.194-14.127 28.3-27.574 29.796 2.167 1.874 4.097 5.55 4.097 11.183 0 8.08-.07 14.583-.07 16.572 0 1.607 1.088 3.49 4.148 2.897 23.98-7.994 41.263-30.622 41.263-57.294C124.388 32.14 97.35 5.104 64 5.104z"/><path d="M26.484 91.806c-.133.3-.605.39-1.035.185-.44-.196-.685-.605-.543-.906.13-.31.603-.395 1.04-.188.44.197.69.61.537.91zm2.446 2.729c-.287.267-.85.143-1.232-.28-.396-.42-.47-.983-.177-1.254.298-.266.844-.14 1.24.28.394.426.472.984.17 1.255zM31.312 98.012c-.37.258-.976.017-1.35-.52-.37-.538-.37-1.183.01-1.44.373-.258.97-.025 1.35.507.368.545.368 1.19-.01 1.452zm3.261 3.361c-.33.365-1.036.267-1.552-.23-.527-.487-.674-1.18-.343-1.544.336-.366 1.045-.264 1.564.23.527.486.686 1.18.333 1.543zm4.5 1.951c-.147.473-.825.688-1.51.486-.683-.207-1.13-.76-.99-1.238.14-.477.823-.7 1.512-.485.683.206 1.13.756.988 1.237zm4.943.361c.017.498-.563.91-1.28.92-.723.017-1.308-.387-1.315-.877 0-.503.568-.91 1.29-.924.717-.013 1.306.387 1.306.88zm4.598-.782c.086.485-.413.984-1.126 1.117-.7.13-1.35-.172-1.44-.653-.086-.498.422-.997 1.122-1.126.714-.123 1.354.17 1.444.663zm0 0"/></g></svg>The grimoire <span class="h">(:h conjurer)</span></a>
+    <a class="optional" href="#many">The many-handed cast</a>
     <a class="optional" href="#familiar">Familiars</a>
     <a href="https://github.com/vim-pro/conjurer.nvim"><svg class="gh-icon" viewBox="0 0 128 128" aria-hidden="true"><g fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M64 5.103c-33.347 0-60.388 27.035-60.388 60.388 0 26.682 17.303 49.317 41.297 57.303 3.017.56 4.125-1.31 4.125-2.905 0-1.44-.056-6.197-.082-11.243-16.8 3.653-20.345-7.125-20.345-7.125-2.747-6.98-6.705-8.836-6.705-8.836-5.48-3.748.413-3.67.413-3.67 6.063.425 9.257 6.223 9.257 6.223 5.386 9.23 14.127 6.562 17.573 5.02.542-3.903 2.107-6.568 3.834-8.076-13.413-1.525-27.514-6.704-27.514-29.843 0-6.593 2.36-11.98 6.223-16.21-.628-1.52-2.695-7.662.584-15.98 0 0 5.07-1.623 16.61 6.19C53.7 35 58.867 34.327 64 34.304c5.13.023 10.3.694 15.127 2.033 11.526-7.813 16.59-6.19 16.59-6.19 3.287 8.317 1.22 14.46.593 15.98 3.872 4.23 6.215 9.617 6.215 16.21 0 23.194-14.127 28.3-27.574 29.796 2.167 1.874 4.097 5.55 4.097 11.183 0 8.08-.07 14.583-.07 16.572 0 1.607 1.088 3.49 4.148 2.897 23.98-7.994 41.263-30.622 41.263-57.294C124.388 32.14 97.35 5.104 64 5.104z"/><path d="M26.484 91.806c-.133.3-.605.39-1.035.185-.44-.196-.685-.605-.543-.906.13-.31.603-.395 1.04-.188.44.197.69.61.537.91zm2.446 2.729c-.287.267-.85.143-1.232-.28-.396-.42-.47-.983-.177-1.254.298-.266.844-.14 1.24.28.394.426.472.984.17 1.255zM31.312 98.012c-.37.258-.976.017-1.35-.52-.37-.538-.37-1.183.01-1.44.373-.258.97-.025 1.35.507.368.545.368 1.19-.01 1.452zm3.261 3.361c-.33.365-1.036.267-1.552-.23-.527-.487-.674-1.18-.343-1.544.336-.366 1.045-.264 1.564.23.527.486.686 1.18.333 1.543zm4.5 1.951c-.147.473-.825.688-1.51.486-.683-.207-1.13-.76-.99-1.238.14-.477.823-.7 1.512-.485.683.206 1.13.756.988 1.237zm4.943.361c.017.498-.563.91-1.28.92-.723.017-1.308-.387-1.315-.877 0-.503.568-.91 1.29-.924.717-.013 1.306.387 1.306.88zm4.598-.782c.086.485-.413.984-1.126 1.117-.7.13-1.35-.172-1.44-.653-.086-.498.422-.997 1.122-1.126.714-.123 1.354.17 1.444.663zm0 0"/></g></svg>GitHub</a>
     <a class="ritual-pill" href="#summoning">✦ begin the ritual</a>
@@ -376,7 +420,8 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
   <div class="law-grid">
     <div class="law"><div class="kick">First law</div><div class="t">All magic is reversible</div>
       <div class="b">One conjure, one undo step. The result flashes when it lands —
-      <code>u</code> un-conjures, entirely.</div></div>
+      <code>u</code> un-conjures, entirely. Rather look before it settles?
+      <code>review = true</code> opens a diff against the buffer as it was.</div></div>
     <div class="law"><div class="kick">Second law</div><div class="t">A spell spoken once echoes</div>
       <div class="b">The intent is captured at the cast. <code>.</code> repeats it over any
       new target — no prompt, ever again.</div></div>
@@ -384,8 +429,61 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 44px; letter-spacin
       <div class="b"><code>:let @r = "add type hints"</code> bottles a spell;
       <code>"r~ip</code> uncorks it anywhere — even mid-macro.</div></div>
     <div class="law"><div class="kick">Fourth law</div><div class="t">A counterspell costs nothing</div>
-      <div class="b">Nothing touches the buffer until the final splice.
+      <div class="b">Nothing touches the buffer while the spell is in the air.
       <code>:ConjureCancel</code> always leaves the file byte-identical.</div></div>
+  </div>
+</section>
+
+<section class="many" id="many">
+  <div class="section-head">
+    <h2>The many-handed cast</h2>
+    <div class="s">one intent, every site in the quickfix list — <code>:h conjurer-aggregate</code></div>
+  </div>
+
+  <div class="qf">
+    <div class="qf-bar">
+      <span class="cm">:ConjureAll</span>
+      <span>convert these prints to structured logging</span>
+    </div>
+    <div class="qf-rows">
+      <div class="qf-row settled"><span class="st ok">✓</span><span class="fl">lua/fetch.lua</span><span class="ln">18</span><span class="tx">log.info(<span class="s">"fetching"</span>, { id = id })</span></div>
+      <div class="qf-row settled"><span class="st ok">✓</span><span class="fl">lua/fetch.lua</span><span class="ln">42</span><span class="tx">log.warn(<span class="s">"retrying"</span>, { attempt = n })</span></div>
+      <div class="qf-row"><span class="st run">…</span><span class="fl">lua/store.lua</span><span class="ln">67</span><span class="tx">print(<span class="s">"saving "</span> .. key)</span></div>
+      <div class="qf-row"><span class="st wa">~</span><span class="fl">lua/store.lua</span><span class="ln">103</span><span class="tx">print(<span class="s">"-- debug --"</span>)</span></div>
+      <div class="qf-row"><span class="st no">✗</span><span class="fl">lua/legacy.lua</span><span class="ln">9</span><span class="tx">print(vim.inspect(cfg))  <span class="note">provider timed out</span></span></div>
+      <div class="qf-row"><span class="st pd">·</span><span class="fl">lua/legacy.lua</span><span class="ln">31</span><span class="tx">print(<span class="s">"done"</span>)</span></div>
+    </div>
+    <div class="qf-legend">
+      <span><span class="st ok">✓</span>applied</span>
+      <span><span class="st run">…</span>in flight</span>
+      <span><span class="st wa">~</span>left alone</span>
+      <span><span class="st no">✗</span>errored</span>
+      <span><span class="st pd">·</span>queued</span>
+      <span><span class="st wa">⊘</span>reverted</span>
+    </div>
+    <div class="qf-note">signs, <code>&lt;Tab&gt;</code> to diff a site, and <code>dd</code> to cancel one come from quickfix.pro — without it the edits simply land undecorated</div>
+  </div>
+
+  <div class="law-grid">
+    <div class="law"><div class="kick">The summoning circle</div><div class="t">Any list will do</div>
+      <div class="b">Fill the list with Vim's own verbs — <code>:grep</code>, LSP references,
+      <code>:cexpr</code> — prune it with <code>:Cfilter</code> or just delete rows, then cast.
+      A bare grep hit grows to the smallest syntax node starting on its line, so a four-line
+      call is transmuted whole.</div></div>
+    <div class="law"><div class="kick">The reckoning</div><div class="t">The list is the review</div>
+      <div class="b">Walk it with <code>:cnext</code> — entries follow the text as it changes,
+      so you judge each site in its real surroundings. <code>:ConjureRejectSite</code> restores
+      one exactly, <code>:ConjureRetrySite</code> sends it back with a word of feedback, and
+      <code>:ConjureRejectAll</code> unwinds the batch, killing what is still in flight.</div></div>
+    <div class="law"><div class="kick">The binding</div><div class="t">Six casts would pick three conventions</div>
+      <div class="b">So one of them teaches the rest. Cast a single pilot with
+      <code>:ConjureNext</code>, fix it until it is right, then <code>:ConjureAll</code> —
+      your approved text rides along as the <em>exemplar</em> every remaining site must match.
+      Nothing the model wrote alone sets the convention.</div></div>
+    <div class="law"><div class="kick">The second casting</div><div class="t">Cast it again, freely</div>
+      <div class="b">Only queued and failed sites fire, so settled work is never disturbed —
+      <code>:grepadd</code> what the search missed and run it again. And the intent becomes
+      <code>~</code>'s remembered spell, so a site no search would find is one motion away.</div></div>
   </div>
 </section>
 
