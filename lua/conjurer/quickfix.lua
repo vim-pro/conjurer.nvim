@@ -2,7 +2,7 @@
 -- list. The native list stays the store; each entry carries only a site id in
 -- user_data, and the live per-site state (in flight, applied, ...) lives in a
 -- driver-side table so status changes never have to write the list. When
--- quickfix.pro is installed those states render as row decorations; without
+-- quickfix-pro is installed those states render as row decorations; without
 -- it, everything still works — the edits just land unadorned.
 local M = {}
 
@@ -25,7 +25,7 @@ local function site_of_entry(entry)
 end
 
 -- ---------------------------------------------------------------------------
--- quickfix.pro integration (optional both ways)
+-- quickfix-pro integration (optional both ways)
 -- ---------------------------------------------------------------------------
 
 -- A skipped site gets the conjure key itself, in warning yellow: the cast ran
@@ -721,7 +721,7 @@ function M.reject_all()
   end
 end
 
---- Summary notification (used when quickfix.pro isn't installed to surface
+--- Summary notification (used when quickfix-pro isn't installed to surface
 --- progress, and any time the user wants a count).
 function M.status()
   local counts = {}

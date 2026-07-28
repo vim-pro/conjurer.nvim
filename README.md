@@ -114,7 +114,7 @@ told to match exactly. When the convention lives elsewhere in the codebase,
 pin it explicitly with `:'<,'>ConjureExemplar` (explicit beats inferred;
 `:ConjureExemplar!` clears, bare shows what's in effect).
 
-With [quickfix.pro](https://github.com/vim-pro/quickfix.pro) installed, the
+With [quickfix-pro.nvim](https://github.com/vim-pro/quickfix-pro.nvim) installed, the
 list shows live per-site status signs, `<Tab>` expands a site into its
 before/after diff, and `dd` on a running site cancels its request.
 

@@ -226,7 +226,7 @@ clears either kind; bare |:ConjureExemplar| shows what's in effect and
 whether you chose it or it was inferred. The exemplar belongs to the
 quickfix list it was set for (it lives in that list's |quickfix-context|).
 
-With the quickfix.pro plugin installed (https://github.com/vim-pro/quickfix.pro)
+With the quickfix-pro plugin installed (https://github.com/vim-pro/quickfix-pro.nvim)
 the list gains live per-site status signs, an inline before/after diff on
 <Tab>, and `dd` on a running site actually cancels its request. Without it
 everything still works — the edits just land undecorated.

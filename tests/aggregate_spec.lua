@@ -461,7 +461,7 @@ H.eq(#vim.api.nvim_list_tabpages(), tabs_before, "no review tabs opened for driv
 H.eq(vim.api.nvim_buf_get_lines(rv, 0, 1, false)[1], "R1!", "driven cast auto-applied under review=true")
 require("conjurer").setup({ review = false })
 
--- 11) integration with quickfix.pro — only when the sibling checkout exists
+-- 11) integration with quickfix-pro — only when the sibling checkout exists
 -- next to this repo. Keeps conjure's own CI green without it.
 local repo = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
 local sibling = vim.fn.fnamemodify(repo, ":h") .. "/quickfix"
@@ -484,7 +484,7 @@ if vim.fn.isdirectory(sibling) == 1 then
   end, 5)
   local decorated = #vim.api.nvim_buf_get_extmarks(qfbuf, status_ns, 0, -1, {})
   if decorated < 1 then
-    H.fail("quickfix.pro rendered no status decorations for driver sites")
+    H.fail("quickfix-pro rendered no status decorations for driver sites")
   end
 
   -- dd on an in-flight row cancels the cast (no edit lands) via on_delete.
@@ -511,9 +511,9 @@ if vim.fn.isdirectory(sibling) == 1 then
   H.eq(vim.api.nvim_buf_get_lines(ib, 1, 2, false)[1], "S2!", "surviving site still conjures after the delete")
   H.eq(vim.api.nvim_buf_get_lines(ib, 0, 1, false)[1], "s1", "cancelled site's line is unchanged")
   vim.cmd("cclose")
-  print("(quickfix.pro integration checks ran)")
+  print("(quickfix-pro integration checks ran)")
 else
-  print("(quickfix.pro sibling not found — integration checks skipped)")
+  print("(quickfix-pro sibling not found — integration checks skipped)")
 end
 
 H.done("aggregate_spec PASS")
