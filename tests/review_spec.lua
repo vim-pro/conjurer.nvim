@@ -9,11 +9,11 @@ local calls = {}
 require("conjurer").setup({
   review = true,
   provider = function(req, cb)
-    local call = { req = req, cb = cb, cancelled = false }
+    local call = { req = req, cb = cb, canceled = false }
     table.insert(calls, call)
     return {
       cancel = function()
-        call.cancelled = true
+        call.canceled = true
       end,
     }
   end,
@@ -186,7 +186,7 @@ H.eq(H.lines(buf)[2], "DRAFT", "draft is live before cancelling from the source 
 H.eq(#vim.api.nvim_list_tabpages(), base_tabs + 1, "review open before source-side cancel")
 vim.api.nvim_set_current_win(origin_win)
 vim.cmd("ConjureCancel")
-H.eq(calls[#calls].cancelled, false, "cancel does not touch a finished provider handle")
+H.eq(calls[#calls].canceled, false, "cancel does not touch a finished provider handle")
 H.eq(#vim.api.nvim_list_tabpages(), base_tabs, "source-side cancel closed the review")
 H.eq(H.lines(buf)[2], "beta two", "source-side cancel REVERTS the draft, not keeps it")
 

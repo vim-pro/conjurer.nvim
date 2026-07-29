@@ -2,13 +2,13 @@
 -- late provider callback is ignored.
 local H = dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h") .. "/helpers.lua")
 
-local pending_cb, cancelled
+local pending_cb, canceled
 require("conjurer").setup({
   provider = function(_, cb)
     pending_cb = cb
     return {
       cancel = function()
-        cancelled = true
+        canceled = true
       end,
     }
   end,
@@ -23,7 +23,7 @@ if #H.pending_marks(buf) == 0 then
 end
 
 vim.cmd("ConjureCancel")
-H.eq(cancelled, true, "provider handle.cancel called")
+H.eq(canceled, true, "provider handle.cancel called")
 H.eq(#H.pending_marks(buf), 0, "decorations cleared on cancel")
 H.eq(H.lines()[1], "hold the line", "buffer untouched on cancel")
 

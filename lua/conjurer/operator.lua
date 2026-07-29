@@ -541,7 +541,7 @@ function M.cancel()
     if cast and cast.state == "reviewing" then
       revert_to_snapshot(cast)
       retire(cast)
-      vim.notify("[conjurer] cancelled 1 conjure (review discarded)")
+      vim.notify("[conjurer] canceled 1 conjure (review discarded)")
     else
       vim.notify("[conjurer] nothing to cancel")
     end
@@ -561,7 +561,7 @@ function M.cancel()
     end
   end
   if n > 0 then
-    vim.notify(("[conjurer] cancelled %d conjure%s"):format(n, n == 1 and "" or "s"))
+    vim.notify(("[conjurer] canceled %d conjure%s"):format(n, n == 1 and "" or "s"))
   else
     vim.notify("[conjurer] nothing to cancel")
   end

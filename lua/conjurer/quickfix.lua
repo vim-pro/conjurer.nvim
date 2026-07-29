@@ -684,11 +684,11 @@ function M.retry_site(feedback)
 end
 
 --- The batch undo: unwind every site. Queued sites are dropped before
---- running ones are cancelled (so the freed slots can't start them), running
+--- running ones are canceled (so the freed slots can't start them), running
 --- requests are actually killed, and applied sites revert to their exact
 --- pre-conjure text. Failed/skipped/already-rejected sites are left alone.
 function M.reject_all()
-  local dropped, cancelled, reverted = 0, 0, 0
+  local dropped, canceled, reverted = 0, 0, 0
   -- Pass 1: drop everything still queued, so cancellations below can't pump
   -- the queue into starting them.
   for _, s in pairs(sites) do
@@ -701,7 +701,7 @@ function M.reject_all()
   for _, s in pairs(sites) do
     if s.state == "running" and s.cancel then
       s.cancel()
-      cancelled = cancelled + 1
+      canceled = canceled + 1
     end
   end
   -- Pass 3: revert what already landed.
@@ -712,11 +712,11 @@ function M.reject_all()
     end
   end
   refresh()
-  if dropped + cancelled + reverted == 0 then
+  if dropped + canceled + reverted == 0 then
     vim.notify("[conjurer] nothing to reject")
   else
     vim.notify(
-      ("[conjurer] batch rejected — %d reverted, %d cancelled, %d never cast"):format(reverted, cancelled, dropped)
+      ("[conjurer] batch rejected — %d reverted, %d canceled, %d never cast"):format(reverted, canceled, dropped)
     )
   end
 end

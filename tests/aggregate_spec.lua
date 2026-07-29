@@ -15,7 +15,7 @@ require("conjurer").setup({
     table.insert(calls, call)
     return {
       cancel = function()
-        call.cancelled = true
+        call.canceled = true
       end,
     }
   end,
@@ -33,10 +33,10 @@ local function pending_calls()
   return n
 end
 
--- Resolve the oldest un-answered, un-cancelled call with `result` (or error).
+-- Resolve the oldest un-answered, un-canceled call with `result` (or error).
 local function answer(result, err)
   for _, c in ipairs(calls) do
-    if not c.done and not c.cancelled then
+    if not c.done and not c.canceled then
       c.done = true
       c.cb(err, result)
       return c
@@ -337,8 +337,8 @@ answer("DONE1") -- site1 done; site3 starts
 H.eq(#calls, 3, "third site launched")
 qf.reject_all()
 H.eq(vim.api.nvim_buf_get_lines(rb[1], 0, 1, false)[1], "orig1", "applied site reverted byte-identical")
-H.eq(calls[2].cancelled, true, "running site 2's request was killed")
-H.eq(calls[3].cancelled, true, "running site 3's request was killed")
+H.eq(calls[2].canceled, true, "running site 2's request was killed")
+H.eq(calls[3].canceled, true, "running site 3's request was killed")
 H.eq(#calls, 3, "queued site 4 was never cast")
 H.eq(vim.api.nvim_buf_get_lines(rb[4], 0, 1, false)[1], "orig4", "queued site's buffer untouched")
 -- a re-run after batch reject casts nothing (rejected is settled)
@@ -496,10 +496,10 @@ if vim.fn.isdirectory(sibling) == 1 then
     return #vim.fn.getqflist({ items = 1 }).items == 1
   end, 5)
   H.eq(#vim.fn.getqflist({ items = 1 }).items, 1, "dd removed the in-flight row")
-  -- the cancelled cast's provider handle was told to cancel
+  -- the canceled cast's provider handle was told to cancel
   local any_cancelled = false
   for _, c in ipairs(calls) do
-    if c.cancelled then
+    if c.canceled then
       any_cancelled = true
     end
   end
@@ -509,7 +509,7 @@ if vim.fn.isdirectory(sibling) == 1 then
   -- answering the surviving site still applies
   answer("S2!")
   H.eq(vim.api.nvim_buf_get_lines(ib, 1, 2, false)[1], "S2!", "surviving site still conjures after the delete")
-  H.eq(vim.api.nvim_buf_get_lines(ib, 0, 1, false)[1], "s1", "cancelled site's line is unchanged")
+  H.eq(vim.api.nvim_buf_get_lines(ib, 0, 1, false)[1], "s1", "canceled site's line is unchanged")
   vim.cmd("cclose")
   print("(quickfix-pro integration checks ran)")
 else
