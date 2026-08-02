@@ -226,6 +226,9 @@ local function narration_virt(cast)
   -- before it starts.
   local waited = cast.started and math.floor((vim.uv.hrtime() - cast.started) / 1e9) or 0
   local clock = waited > 0 and ("  %d:%02d"):format(math.floor(waited / 60), waited % 60) or ""
+  if cast.phase then
+    clock = clock .. "  " .. cast.phase .. "…"
+  end
   local lines = {
     { { " ✨ conjuring: " .. headline(cast.intent), "ConjurerNarration" }, { clock, "ConjurerPreview" } },
   }
@@ -934,6 +937,13 @@ function M.conjure_region(buf, region, intent, opts)
     end
     request.on_result = function(line)
       preview(cast, line)
+    end
+    request.on_phase = function(phase)
+      cast.phase = phase
+      local srow, scol, erow, ecol = bounds(cast)
+      if srow then
+        place_mark(cast, srow, scol, erow, ecol)
+      end
     end
   end
 

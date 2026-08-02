@@ -109,6 +109,13 @@ While a conjure is in flight:
   would otherwise render its newlines as `^@` and run off the window. Only
   the display is trimmed; the model always receives the intent whole.
 
+- The intent line says which PHASE the model is in — `thinking…` then
+  `writing…` — read off the stream rather than guessed. A large request
+  spends most of its life in a thinking block, and the CLI sends no thinking
+  text for it: measured, a thinking block opens, a signature arrives at the
+  end, and not one character in between. There is nothing to show, so what
+  is shown is which block is open.
+
 - The intent line carries ELAPSED time, because most of a long cast is
   silence. Measured against the CLI: a request produces nothing for its
   first few seconds, and a large one for minutes — the model thinks before

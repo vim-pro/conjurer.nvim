@@ -46,7 +46,7 @@ end
 
 -- Feed one line of claude --output-format stream-json into the sink.
 -- Returns the full result text if this line carried the final result event.
-local function feed_stream_json(sink, l)
+local function feed_stream_json(sink, l, on_phase)
   if l == "" then
     return nil
   end
@@ -60,6 +60,17 @@ local function feed_stream_json(sink, l)
     local ev = obj.event
     if ev.type == "content_block_delta" and type(ev.delta) == "table" and ev.delta.type == "text_delta" then
       sink:feed(ev.delta.text or "")
+    elseif ev.type == "content_block_start" and type(ev.content_block) == "table" then
+      -- WHICH PHASE, from the stream itself. A big request spends most of
+      -- its life in a thinking block and the CLI sends no thinking_delta
+      -- for it — measured: a thinking block opens, a signature arrives at
+      -- the end, and not one character in between. So there is no text to
+      -- show, and the only honest thing to report is which of the two
+      -- blocks is open. It is the difference between a still screen and
+      -- one that says what it is doing.
+      if on_phase then
+        on_phase(ev.content_block.type == "thinking" and "thinking" or "writing")
+      end
     end
   elseif obj.type == "result" and type(obj.result) == "string" then
     return obj.result
@@ -99,7 +110,7 @@ function M.request(request, callback)
         end
         local l = jsonbuf:sub(1, nl - 1)
         jsonbuf = jsonbuf:sub(nl + 1)
-        full_result = feed_stream_json(sink, l) or full_result
+        full_result = feed_stream_json(sink, l, request.on_phase) or full_result
       end
     else
       sink:feed(data)
