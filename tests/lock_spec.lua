@@ -157,4 +157,28 @@ require("conjurer.operator").conjure_region(cb4, { kind = "line", srow = 0, erow
 H.eq(held4.cwd, nil, "and nil when unsaid, so a provider inherits nvim's as it always did")
 require("conjurer.operator").cancel()
 
+-- WHAT TO CALL IT ON SCREEN. The status line shows the intent's first line,
+-- which is right when a person typed one and wrong when a caller assembled
+-- a page of instructions: scry's drafting request opens by telling the
+-- model to discard the placeholder, and the screen read "conjuring: The
+-- snippet is a two-line placeholder. DISCARD IT."
+require("conjurer").setup({ provider = function() end })
+local lbuf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_win_set_buf(0, lbuf)
+vim.api.nvim_buf_set_lines(lbuf, 0, -1, false, { "target" })
+require("conjurer.operator").conjure_region(lbuf, { kind = "line", srow = 0, erow = 1 }, "DISCARD THE PLACEHOLDER.", {
+  label = "drafting 12 of 72 files",
+})
+local shown5 = H.virt_text(lbuf)
+H.eq(shown5:find("drafting 12 of 72 files", 1, true) ~= nil, true, "the caller's label is what shows")
+H.eq(shown5:find("DISCARD", 1, true), nil, "and the instructions stay out of the status line")
+require("conjurer.operator").cancel()
+
+local nbuf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_win_set_buf(0, nbuf)
+vim.api.nvim_buf_set_lines(nbuf, 0, -1, false, { "target" })
+require("conjurer.operator").conjure_region(nbuf, { kind = "line", srow = 0, erow = 1 }, "make it shorter")
+H.eq(H.virt_text(nbuf):find("make it shorter", 1, true) ~= nil, true, "unlabeled, the intent is the name, as ever")
+require("conjurer.operator").cancel()
+
 H.done("lock_spec PASS")

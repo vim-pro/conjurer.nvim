@@ -216,7 +216,7 @@ end
 
 local function narration_virt(cast)
   if cast.state == "reviewing" then
-    return { { { " 👀 reviewing: " .. headline(cast.intent), "ConjurerNarration" } } }
+    return { { { " 👀 reviewing: " .. headline(cast.label or cast.intent), "ConjurerNarration" } } }
   end
   -- ELAPSED, because most of a long cast is silence. Measured against the
   -- real CLI: a request produces nothing for its first few seconds and a
@@ -230,7 +230,7 @@ local function narration_virt(cast)
     clock = clock .. "  " .. cast.phase .. "…"
   end
   local lines = {
-    { { " ✨ conjuring: " .. headline(cast.intent), "ConjurerNarration" }, { clock, "ConjurerPreview" } },
+    { { " ✨ conjuring: " .. headline(cast.label or cast.intent), "ConjurerNarration" }, { clock, "ConjurerPreview" } },
   }
   local n = #cast.narration
   for i = math.max(1, n - NARRATION_LINES + 1), n do
@@ -888,6 +888,14 @@ function M.conjure_region(buf, region, intent, opts)
     buf = buf,
     kind = region.kind,
     intent = intent,
+    -- WHAT TO CALL THIS ON SCREEN, when the intent is not fit to be a name.
+    -- The status line shows the intent's first line, which works when a
+    -- person typed one and fails when a caller assembled a page of
+    -- instructions: scry's drafting request opens by telling the model to
+    -- discard the placeholder, so the screen read "conjuring: The snippet is
+    -- a two-line placeholder. DISCARD IT." A caller that knows what it is
+    -- doing can say so.
+    label = opts and opts.label or nil,
     snapshot = snapshot,
     narration = {},
     state = "generating",
