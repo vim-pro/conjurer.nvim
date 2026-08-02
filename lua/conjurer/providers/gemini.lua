@@ -21,7 +21,7 @@ function M.request(request, callback)
     systemInstruction = { parts = { { text = prompt.system(config) } } },
   }
 
-  local sink = prompt.new_sink(request.on_narrate)
+  local sink = prompt.new_sink(request.on_narrate, request.on_result)
   local raw = {}
   local pending = ""
   local saw_event = false

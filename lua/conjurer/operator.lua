@@ -5,6 +5,9 @@ local flash_ns = vim.api.nvim_create_namespace("conjurer.flash")
 
 vim.api.nvim_set_hl(0, "ConjurerPending", { link = "Comment", default = true })
 vim.api.nvim_set_hl(0, "ConjurerNarration", { link = "DiagnosticVirtualTextInfo", default = true })
+-- The result as it streams, distinct from the narration above it: one is
+-- the model talking about the work and the other is the work.
+vim.api.nvim_set_hl(0, "ConjurerPreview", { link = "Comment", default = true })
 
 -- The intent survives between invocations so that `.` (which re-runs the
 -- operatorfunc without going through the mapping) reuses it instead of
@@ -33,6 +36,10 @@ local function new_id()
 end
 
 local NARRATION_LINES = 4
+-- How much of the streamed result to keep on screen. A window at the tail,
+-- because the point is to watch it being written, not to read the whole
+-- thing twice — it lands in the buffer the moment it is done.
+local PREVIEW_LINES = 8
 
 --- Returns an expr-mapping callback that arms the operator. `followup` is
 --- appended to g@ (e.g. "_" for the current-line variant).
@@ -217,6 +224,13 @@ local function narration_virt(cast)
   local n = #cast.narration
   for i = math.max(1, n - NARRATION_LINES + 1), n do
     table.insert(lines, { { "    · " .. cast.narration[i], "ConjurerNarration" } })
+  end
+  -- The result so far, under the narration. Bounded to a window at the tail
+  -- so a long answer scrolls rather than growing without limit — a preview
+  -- that fills the screen is the wait it was meant to replace.
+  local p = cast.preview and #cast.preview or 0
+  for i = math.max(1, p - PREVIEW_LINES + 1), p do
+    table.insert(lines, { { "    " .. cast.preview[i], "ConjurerPreview" } })
   end
   return lines
 end
@@ -413,6 +427,21 @@ local function retire(cast)
     pcall(vim.api.nvim_buf_del_extmark, cast.buf, ns, cast.mark)
   end
   prune()
+end
+
+--- A result line, as it arrives. Kept apart from narration: narration is
+--- the model talking about the work, and this IS the work — someone
+--- watching a page of features get written wants to see the features.
+local function preview(cast, line)
+  if cast.done then
+    return
+  end
+  cast.preview = cast.preview or {}
+  table.insert(cast.preview, (tostring(line):gsub("[\r\n]+", " ")))
+  local srow, scol, erow, ecol = bounds(cast)
+  if srow then
+    place_mark(cast, srow, scol, erow, ecol)
+  end
 end
 
 local function narrate(cast, line)
@@ -747,6 +776,9 @@ local function do_retry(cast, feedback)
     request.on_narrate = function(line)
       narrate(cast, line)
     end
+    request.on_result = function(line)
+      preview(cast, line)
+    end
   end
   invoke_provider(cast, request, config)
 end
@@ -864,6 +896,9 @@ function M.conjure_region(buf, region, intent, opts)
   if config.narration then
     request.on_narrate = function(line)
       narrate(cast, line)
+    end
+    request.on_result = function(line)
+      preview(cast, line)
     end
   end
 

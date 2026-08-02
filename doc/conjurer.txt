@@ -107,11 +107,19 @@ While a conjure is in flight:
   intent, CLIPPED: virtual text is a single line, so a long or multi-line
   intent — a plugin driving |conjurer-api| may send a whole specification —
   would otherwise render its newlines as `^@` and run off the window. Only
-  the display is trimmed; the model always receives the intent whole. >
+  the display is trimmed; the model always receives the intent whole.
+
+- The RESULT streams too, under the narration and in |hl-ConjurerPreview|.
+  The two are different things — narration is the model talking about the
+  work, the preview is the work — and a caller that asks for a page of text
+  should be able to watch it arrive rather than wait for it. Only the tail
+  is kept on screen: a preview that fills the window is the wait it
+  replaced. Nothing touches the buffer until the splice, as before. >
 
     local function fetch_user(id)          ← dimmed, locked
      ✨ conjuring: add error handling
         · wrapping the decode in a pcall
+        return data                        ← the result, as it streams
       local res = http.get("/users/" .. id)
       ...
 <

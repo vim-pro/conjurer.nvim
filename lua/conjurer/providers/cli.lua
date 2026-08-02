@@ -85,7 +85,7 @@ function M.request(request, callback)
   -- narration-protocol text, so this is safe even though it looks
   -- claude-specific.
   local streaming_json = config.cli_cmd == nil
-  local sink = prompt.new_sink(request.on_narrate)
+  local sink = prompt.new_sink(request.on_narrate, request.on_result)
   local jsonbuf = ""
   local full_result = nil
 

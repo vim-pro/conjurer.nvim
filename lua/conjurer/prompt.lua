@@ -112,8 +112,14 @@ end
 --- lines before <<<RESULT go to `on_narrate`, lines between the markers
 --- accumulate as the result. If the markers never appear (a model or custom
 --- provider ignoring the protocol), the whole output is the result.
+--- `on_result` sees each RESULT line as it arrives. The sink already
+--- assembled the result line by line and kept it to itself, so every caller
+--- waited for the whole thing — fine for rewriting one function, and the
+--- difference between watching and waiting when a request writes a page of
+--- features.
 ---@param on_narrate fun(line: string)?
-function M.new_sink(on_narrate)
+---@param on_result fun(line: string)?
+function M.new_sink(on_narrate, on_result)
   local sink = {
     pending = "",
     mode = "narrate",
@@ -133,6 +139,9 @@ function M.new_sink(on_narrate)
         sink.mode = "done"
       else
         table.insert(sink.result, l)
+        if on_result then
+          on_result(l)
+        end
       end
     end
   end

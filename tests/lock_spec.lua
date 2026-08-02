@@ -104,4 +104,29 @@ H.eq(ok, true, "shrinking the buffer under a live cast does not throw: " .. tost
 H.eq(vim.api.nvim_buf_is_valid(ub), true, "and the buffer survives")
 require("conjurer.operator").cancel()
 
+
+-- THE RESULT STREAMS. The sink assembled it line by line and kept it to
+-- itself, so every caller waited for the whole answer — fine for rewriting
+-- one function, and the difference between watching and waiting when a
+-- request writes a page of features.
+local held3
+require("conjurer").setup({
+  provider = function(req, cb)
+    held3 = req
+  end,
+})
+local sb = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_win_set_buf(0, sb)
+vim.api.nvim_buf_set_lines(sb, 0, -1, false, { "target" })
+require("conjurer.operator").conjure_region(sb, { kind = "line", srow = 0, erow = 1 }, "write some features")
+H.eq(type(held3.on_result), "function", "a provider is handed somewhere to put result lines")
+held3.on_narrate("thinking about it")
+held3.on_result("feature Find the checklist you need")
+held3.on_result("  route index")
+local shown3 = H.virt_text(sb)
+H.eq(shown3:find("thinking about it", 1, true) ~= nil, true, "narration still shows")
+H.eq(shown3:find("feature Find the checklist you need", 1, true) ~= nil, true, "and so does the work itself")
+H.eq(shown3:find("route index", 1, true) ~= nil, true, "as it arrives, line by line")
+require("conjurer.operator").cancel()
+
 H.done("lock_spec PASS")
