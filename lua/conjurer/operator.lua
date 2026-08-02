@@ -926,6 +926,12 @@ function M.conjure_region(buf, region, intent, opts)
     text = table.concat(snapshot, "\n"),
     context_before = before,
     context_after = after,
+    -- Where the request is ABOUT, when that is not where nvim happens to be
+    -- sitting. A caller that names files by repo-relative path (scry drafts a
+    -- whole project's worth) is describing them relative to a root, and a
+    -- provider that can read files must be standing in the same place or it
+    -- reads none of them and answers about nothing.
+    cwd = opts and opts.cwd or nil,
     note = opts and opts.note or nil,
     shared_context = opts and opts.shared_context or nil,
     previous_attempt = opts and opts.previous_attempt or nil,

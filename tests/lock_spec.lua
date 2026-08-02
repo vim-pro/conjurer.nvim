@@ -129,4 +129,32 @@ H.eq(shown3:find("feature Find the checklist you need", 1, true) ~= nil, true, "
 H.eq(shown3:find("route index", 1, true) ~= nil, true, "as it arrives, line by line")
 require("conjurer.operator").cancel()
 
+-- WHERE THE REQUEST IS ABOUT. A caller can name files by a path that only
+-- means something from a particular directory — scry drafts a project by
+-- handing over a repo-relative worklist — and a provider that reads files
+-- has to be standing there. The glass is a scry:// buffer with no directory
+-- of its own, so this defaulted to wherever nvim was opened: the model got
+-- nine paths that resolved to nothing, read no files, and handed the region
+-- back unchanged. Nothing errored. It looked exactly like a model with
+-- nothing to say.
+local held4
+require("conjurer").setup({
+  provider = function(req, cb)
+    held4 = req
+  end,
+})
+local cb4 = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_win_set_buf(0, cb4)
+vim.api.nvim_buf_set_lines(cb4, 0, -1, false, { "target" })
+require("conjurer.operator").conjure_region(cb4, { kind = "line", srow = 0, erow = 1 }, "describe", {
+  cwd = "/some/project",
+})
+H.eq(held4.cwd, "/some/project", "the caller's root reaches the request")
+require("conjurer.operator").cancel()
+
+held4 = nil
+require("conjurer.operator").conjure_region(cb4, { kind = "line", srow = 0, erow = 1 }, "describe")
+H.eq(held4.cwd, nil, "and nil when unsaid, so a provider inherits nvim's as it always did")
+require("conjurer.operator").cancel()
+
 H.done("lock_spec PASS")

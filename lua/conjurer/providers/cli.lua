@@ -122,6 +122,9 @@ function M.request(request, callback)
   local proc = vim.system(cmd, {
     stdin = input,
     text = true,
+    -- nil inherits nvim's, which is the right default and was the only
+    -- behavior: a request whose paths are relative to somewhere else says so.
+    cwd = request.cwd,
     timeout = config.timeout_ms or 300000,
     stdout = function(_, data)
       if data then
