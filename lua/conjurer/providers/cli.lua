@@ -111,7 +111,7 @@ function M.request(request, callback)
   local proc = vim.system(cmd, {
     stdin = input,
     text = true,
-    timeout = 300000,
+    timeout = config.timeout_ms or 300000,
     stdout = function(_, data)
       if data then
         vim.schedule(function()
@@ -122,6 +122,20 @@ function M.request(request, callback)
   }, function(out)
     vim.schedule(function()
       if out.code ~= 0 then
+        -- vim.system reports a timeout kill as 124, and "exit 124" tells
+        -- you nothing — least of all that the fix is a bigger number. A
+        -- large request legitimately runs long: scry's drafting pass sends
+        -- a whole worklist and can sit thinking for minutes.
+        if out.code == 124 then
+          local secs = math.floor((config.timeout_ms or 300000) / 1000)
+          callback(
+            ("%s timed out after %ds — raise it with setup({ timeout_ms = … }) if the request is a big one"):format(
+              cmd[1],
+              secs
+            )
+          )
+          return
+        end
         local detail = (out.stderr and out.stderr ~= "" and out.stderr) or ("exit " .. out.code)
         callback(cmd[1] .. " failed: " .. vim.trim(detail))
         return

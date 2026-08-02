@@ -384,6 +384,10 @@ Defaults: >lua
 
       -- Max output tokens ("anthropic" provider).
       max_tokens = 16000,
+    -- How long one request may run before it is killed. Five minutes suits
+    -- a region rewrite; a caller that sends a whole worklist can need more,
+    -- and a timeout says so by name rather than as "exit 124".
+    timeout_ms = 300000,
 
       -- Adaptive thinking: better transforms, more latency ("anthropic").
       thinking = true,

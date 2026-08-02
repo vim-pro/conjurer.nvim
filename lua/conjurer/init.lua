@@ -64,6 +64,11 @@ M.config = {
   -- "openai"/"gemini" use their own standard OPENAI_API_KEY/GEMINI_API_KEY).
   api_key_env = "ANTHROPIC_API_KEY",
   max_tokens = 16000,
+  -- How long a single request may run before it is killed. Five minutes
+  -- suits a region rewrite; a caller that sends a whole worklist — scry's
+  -- drafting pass — can need more, and a timeout now says so by name
+  -- rather than as "exit 124".
+  timeout_ms = 300000,
   -- Adaptive thinking improves transform quality at some latency cost.
   thinking = true,
   -- Lines of surrounding buffer context sent with each request.
