@@ -40,18 +40,27 @@ H.eq(
   "cli_cmd wins over config.cli and auto-probing"
 )
 
--- cli.command: config.cli forces a named recipe, model substitution works,
--- and a nil model falls back to claude's own default (not a hole in the
--- table — the exact bug this design guards against).
+-- cli.command: config.cli forces a named recipe, and a named model is used.
 local claude_cmd = cli.command({ cli = "claude", model = "custom-model" })
 if not vim.tbl_contains(claude_cmd, "custom-model") then
   H.fail("config.cli=claude with a model should use it: " .. vim.inspect(claude_cmd))
 end
+H.eq(#claude_cmd, 8, "no nil hole in the claude recipe's command array")
+
+-- A NIL MODEL PASSES NO --model AT ALL. `model = nil` is documented as
+-- "uses the resolved provider's own default", and this recipe quietly
+-- pinned one instead — for every user who never set one. The comment here
+-- said "falls back to claude's own default" while the assertion below it
+-- demanded a specific version string, which is how it survived.
+--
+-- It was not free. Same drafting prompt, same 13 tool calls, same 14 turns:
+-- the pinned model took 89.5s to the CLI default's 55.5s, and streamed zero
+-- characters of thinking against 1663 — thinking blocks carrying a
+-- signature and no text, so the longest phase of a request put nothing on
+-- the wire and there was nothing any narration could show.
 local claude_cmd_default = cli.command({ cli = "claude" })
-if not vim.tbl_contains(claude_cmd_default, "claude-opus-4-8") then
-  H.fail("config.cli=claude with no model should default to claude-opus-4-8: " .. vim.inspect(claude_cmd_default))
-end
-H.eq(#claude_cmd_default, 8, "no nil hole in the claude recipe's command array")
+H.eq(vim.tbl_contains(claude_cmd_default, "--model"), false, "no model is named when none was asked for")
+H.eq(#claude_cmd_default, 6, "and no hole where one would have been")
 
 -- cli.command: an unknown config.cli errors clearly rather than crashing a
 -- caller with a nil-index traceback.
@@ -114,3 +123,68 @@ end
 H.eq(#H.pending_marks(buf), 0, "decorations cleared after cli round trip")
 
 H.done("cli_spec PASS")
+
+-- THE CLI'S STREAM, READ AGAINST REAL BYTES. These lines are a transcript
+-- of an actual drafting request, not a description of one.
+--
+-- A thinking block is where a big request spends most of its life, and this
+-- reader dropped every thinking_delta on the belief that the CLI never
+-- sends them. It does — 1663 characters over 24 deltas on the run these
+-- lines come from — so the longest phase of a cast showed nothing while the
+-- model was saying exactly what it was doing.
+local feed = cli._feed_stream_json
+local narrated, fed = {}, {}
+local fake_sink = {
+  feed = function(_, text)
+    fed[#fed + 1] = text
+  end,
+}
+local function on_narrate(line)
+  narrated[#narrated + 1] = line
+end
+local phases = {}
+local function on_phase(p)
+  phases[#phases + 1] = p
+end
+
+local THINK1 =
+  '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Let me read all the listed files to understand what they do before writing feature"}}}'
+local THINK2 =
+  '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" entries."}}}'
+local TEXT =
+  '{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"feature someone can read a checklist"}}}'
+local START_THINKING =
+  '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}}'
+local STOP = '{"type":"stream_event","event":{"type":"content_block_stop","index":0}}'
+
+feed(fake_sink, START_THINKING, on_phase, on_narrate)
+H.eq(phases[1], "thinking", "an opening thinking block names the phase")
+feed(fake_sink, THINK1, on_phase, on_narrate)
+H.eq(#narrated, 0, "half a sentence is not shown as a whole one")
+feed(fake_sink, THINK2, on_phase, on_narrate)
+H.eq(
+  narrated[1],
+  "Let me read all the listed files to understand what they do before writing feature entries.",
+  "and the sentence appears once it is complete"
+)
+H.eq(#fed, 0, "thinking never reaches the sink — reasoning about the work is not the work")
+
+feed(fake_sink, TEXT, on_phase, on_narrate)
+H.eq(fed[1], "feature someone can read a checklist", "the answer itself does reach the sink")
+H.eq(#narrated, 1, "and is not narrated twice")
+
+-- A thinking block that ends mid-sentence still shows what it said, or the
+-- last thing on screen is whatever happened to end in a period.
+narrated = {}
+feed(fake_sink, START_THINKING, on_phase, on_narrate)
+feed(fake_sink, THINK1, on_phase, on_narrate)
+feed(fake_sink, STOP, on_phase, on_narrate)
+H.eq(#narrated, 1, "the tail is flushed when the block closes")
+
+-- No on_narrate at all (narration off) must not accumulate forever.
+feed(fake_sink, THINK1, on_phase, nil)
+feed(fake_sink, THINK2, on_phase, nil)
+feed(fake_sink, START_THINKING, on_phase, on_narrate)
+feed(fake_sink, THINK2, on_phase, on_narrate)
+feed(fake_sink, STOP, on_phase, on_narrate)
+H.eq(narrated[#narrated], "entries.", "a discarded buffer does not leak into the next cast")

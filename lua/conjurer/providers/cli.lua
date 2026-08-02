@@ -46,7 +46,40 @@ end
 
 -- Feed one line of claude --output-format stream-json into the sink.
 -- Returns the full result text if this line carried the final result event.
-local function feed_stream_json(sink, l, on_phase)
+-- Thinking arrives as chunks, not lines, and often as one long paragraph
+-- with no newline in it at all — so waiting for one means showing nothing
+-- until the block closes, which is the silence this is here to fill.
+-- Sentences are the unit that actually arrives.
+local think_buf = ""
+local function flush_thinking(on_narrate, final)
+  if not on_narrate then
+    think_buf = ""
+    return
+  end
+  while true do
+    local at = think_buf:find("[.!?]%s")
+    if not at then
+      break
+    end
+    local sentence = vim.trim(think_buf:sub(1, at))
+    think_buf = think_buf:sub(at + 1)
+    if sentence ~= "" then
+      on_narrate(sentence)
+    end
+  end
+  if final then
+    local rest = vim.trim(think_buf)
+    if rest ~= "" then
+      on_narrate(rest)
+    end
+    think_buf = ""
+  end
+end
+
+--- Read one line of the CLI's stream-json output. Exposed for specs: the
+--- format is the CLI's, not ours, so it is pinned against real bytes.
+---@return string? result The final result, on the line that carries it.
+local function feed_stream_json(sink, l, on_phase, on_narrate)
   if l == "" then
     return nil
   end
@@ -60,14 +93,28 @@ local function feed_stream_json(sink, l, on_phase)
     local ev = obj.event
     if ev.type == "content_block_delta" and type(ev.delta) == "table" and ev.delta.type == "text_delta" then
       sink:feed(ev.delta.text or "")
+    elseif ev.type == "content_block_delta" and type(ev.delta) == "table" and ev.delta.type == "thinking_delta" then
+      -- THINKING IS NARRATION, NEVER RESULT. It goes to on_narrate and not
+      -- to the sink: the sink accumulates what will be spliced into your
+      -- buffer, and reasoning about the work is not the work.
+      --
+      -- This was dropped, on the belief that the CLI never sends it. It
+      -- does. What it does not do is send it for every model: measured on
+      -- one drafting batch, `claude-opus-4-8` streamed thinking blocks with
+      -- a signature and zero characters of text, while the CLI's own
+      -- default streamed 1663 characters of it over 24 deltas. So the
+      -- silence was half a pinned model (fixed in known.lua) and half this
+      -- branch not existing.
+      flush_thinking(on_narrate)
+      think_buf = think_buf .. (ev.delta.thinking or "")
+      flush_thinking(on_narrate)
+    elseif ev.type == "content_block_stop" then
+      flush_thinking(on_narrate, true)
     elseif ev.type == "content_block_start" and type(ev.content_block) == "table" then
-      -- WHICH PHASE, from the stream itself. A big request spends most of
-      -- its life in a thinking block and the CLI sends no thinking_delta
-      -- for it — measured: a thinking block opens, a signature arrives at
-      -- the end, and not one character in between. So there is no text to
-      -- show, and the only honest thing to report is which of the two
-      -- blocks is open. It is the difference between a still screen and
-      -- one that says what it is doing.
+      -- WHICH PHASE, from the stream itself. Even when a model streams its
+      -- thinking there are gaps in it, and the phase says which kind of
+      -- silence you are looking at. It is the difference between a still
+      -- screen and one that says what it is doing.
       if on_phase then
         on_phase(ev.content_block.type == "thinking" and "thinking" or "writing")
       end
@@ -77,6 +124,7 @@ local function feed_stream_json(sink, l, on_phase)
   end
   return nil
 end
+
 
 --- @type conjurer.Provider
 function M.request(request, callback)
@@ -110,7 +158,7 @@ function M.request(request, callback)
         end
         local l = jsonbuf:sub(1, nl - 1)
         jsonbuf = jsonbuf:sub(nl + 1)
-        full_result = feed_stream_json(sink, l, request.on_phase) or full_result
+        full_result = feed_stream_json(sink, l, request.on_phase, request.on_narrate) or full_result
       end
     else
       sink:feed(data)
@@ -173,5 +221,7 @@ function M.request(request, callback)
     end,
   }
 end
+
+M._feed_stream_json = feed_stream_json
 
 return M

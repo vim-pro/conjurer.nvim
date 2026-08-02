@@ -13,17 +13,31 @@ M.clis = {
     name = "claude",
     bin = "claude",
     command = function(config)
-      local model = config.model or "claude-opus-4-8"
-      return {
-        "claude",
-        "-p",
-        "--model",
-        model,
+      local cmd = { "claude", "-p" }
+      -- NO PINNED FALLBACK. `model = nil` is documented as "uses the
+      -- resolved provider's own default" and this said otherwise, quietly,
+      -- for every user who never set one.
+      --
+      -- What it cost, measured on one drafting batch — same prompt, same 13
+      -- tool calls, same 14 turns: the pinned model took 89.5s to the CLI
+      -- default's 55.5s, and streamed ZERO characters of thinking against
+      -- 1663. It opens thinking blocks that carry a signature and no text,
+      -- so the longest phase of a request had nothing on the wire at all —
+      -- a minute of silence that no amount of narration work could have
+      -- filled, because there was nothing to narrate.
+      --
+      -- Pinning one is still a `model` away, and now it is the user saying
+      -- so rather than this file.
+      if config.model then
+        vim.list_extend(cmd, { "--model", config.model })
+      end
+      vim.list_extend(cmd, {
         "--output-format",
         "stream-json",
         "--include-partial-messages",
         "--verbose",
-      }
+      })
+      return cmd
     end,
   },
   {
