@@ -218,8 +218,16 @@ local function narration_virt(cast)
   if cast.state == "reviewing" then
     return { { { " 👀 reviewing: " .. headline(cast.intent), "ConjurerNarration" } } }
   end
+  -- ELAPSED, because most of a long cast is silence. Measured against the
+  -- real CLI: a request produces nothing for its first few seconds and a
+  -- big one for minutes — the model is thinking before it writes a word —
+  -- and with nothing moving on screen that is indistinguishable from a
+  -- hang. The result does stream once it starts; this is about the part
+  -- before it starts.
+  local waited = cast.started and math.floor((vim.uv.hrtime() - cast.started) / 1e9) or 0
+  local clock = waited > 0 and ("  %d:%02d"):format(math.floor(waited / 60), waited % 60) or ""
   local lines = {
-    { { " ✨ conjuring: " .. headline(cast.intent), "ConjurerNarration" } },
+    { { " ✨ conjuring: " .. headline(cast.intent), "ConjurerNarration" }, { clock, "ConjurerPreview" } },
   }
   local n = #cast.narration
   for i = math.max(1, n - NARRATION_LINES + 1), n do
@@ -420,6 +428,16 @@ local splice
 --- Remove a cast's decorations and drop it from the registry.
 local function retire(cast)
   cast.done = true
+  -- The clock describes a cast in flight; a retired cast is not in flight.
+  -- A libuv timer outliving the thing it ticks for is a leak that fires
+  -- forever on a buffer nobody is looking at.
+  if cast.clock then
+    pcall(function()
+      cast.clock:stop()
+      cast.clock:close()
+    end)
+    cast.clock = nil
+  end
   if cast.review then
     close_review(cast)
   end
@@ -878,6 +896,23 @@ function M.conjure_region(buf, region, intent, opts)
     place_mark(cast, region.srow, region.scol, region.erow, region.ecol)
   end
   table.insert(casts, cast)
+  -- A second-hand for the wait. Cheap, and stopped the moment the cast
+  -- settles: nothing here should outlive what it is describing.
+  cast.started = vim.uv.hrtime()
+  cast.clock = vim.uv.new_timer()
+  cast.clock:start(
+    1000,
+    1000,
+    vim.schedule_wrap(function()
+      if cast.done or not vim.api.nvim_buf_is_valid(cast.buf) then
+        return
+      end
+      local srow, scol, erow, ecol = bounds(cast)
+      if srow then
+        place_mark(cast, srow, scol, erow, ecol)
+      end
+    end)
+  )
   ensure_lock(buf)
 
   local request = {

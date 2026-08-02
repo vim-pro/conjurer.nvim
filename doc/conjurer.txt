@@ -109,6 +109,12 @@ While a conjure is in flight:
   would otherwise render its newlines as `^@` and run off the window. Only
   the display is trimmed; the model always receives the intent whole.
 
+- The intent line carries ELAPSED time, because most of a long cast is
+  silence. Measured against the CLI: a request produces nothing for its
+  first few seconds, and a large one for minutes — the model thinks before
+  it writes a word. With nothing moving that is indistinguishable from a
+  hang, and the clock is the difference between waiting and wondering.
+
 - The RESULT streams too, under the narration and in |hl-ConjurerPreview|.
   The two are different things — narration is the model talking about the
   work, the preview is the work — and a caller that asks for a page of text
