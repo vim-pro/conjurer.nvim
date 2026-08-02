@@ -222,8 +222,32 @@ local function narration_virt(cast)
 end
 
 --- (Re)place the cast's region extmark. Rows/cols 0-based, end exclusive.
+---
+--- CLAMPED TO WHAT THE BUFFER ACTUALLY HOLDS, and never fatal. The
+--- coordinates come from replaced_extent, which measures the SNAPSHOT — so
+--- they describe the text that was put back, not necessarily the text that
+--- is there. Undo makes the two disagree: `u` on a locked region fires
+--- TextChanged, restore() writes the snapshot and re-anchors, and the
+--- buffer is mid-change underneath. That threw `Invalid 'end_col': out of
+--- range` out of an autocommand, twice, over a plain undo.
+---
+--- A region highlight is decoration. Failing to place it must never take
+--- down the edit it was decorating, so the clamp is followed by a pcall
+--- rather than trusted to be sufficient.
 local function place_mark(cast, srow, scol, erow, ecol)
-  cast.mark = vim.api.nvim_buf_set_extmark(cast.buf, ns, srow, scol, {
+  if not vim.api.nvim_buf_is_valid(cast.buf) then
+    return
+  end
+  local last = vim.api.nvim_buf_line_count(cast.buf) - 1
+  srow = math.max(0, math.min(srow, last))
+  erow = math.max(srow, math.min(erow, last))
+  local function width(row)
+    local l = vim.api.nvim_buf_get_lines(cast.buf, row, row + 1, false)[1]
+    return #(l or "")
+  end
+  scol = math.max(0, math.min(scol, width(srow)))
+  ecol = math.max(0, math.min(ecol, width(erow)))
+  local ok, id = pcall(vim.api.nvim_buf_set_extmark, cast.buf, ns, srow, scol, {
     id = cast.mark,
     end_row = erow,
     end_col = ecol,
@@ -232,6 +256,9 @@ local function place_mark(cast, srow, scol, erow, ecol)
     right_gravity = false,
     end_right_gravity = true,
   })
+  if ok then
+    cast.mark = id
+  end
 end
 
 --- Current extent of the cast's region: srow, scol, erow, ecol (0-based,
