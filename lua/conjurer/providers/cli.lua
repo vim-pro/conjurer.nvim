@@ -173,7 +173,9 @@ function M.request(request, callback)
     -- nil inherits nvim's, which is the right default and was the only
     -- behavior: a request whose paths are relative to somewhere else says so.
     cwd = request.cwd,
-    timeout = config.timeout_ms or 300000,
+    -- A caller that knows its request is a big one can say so; the
+    -- configured value is the floor for everything else.
+    timeout = request.timeout_ms or config.timeout_ms or 300000,
     stdout = function(_, data)
       if data then
         vim.schedule(function()
@@ -189,7 +191,7 @@ function M.request(request, callback)
         -- large request legitimately runs long: scry's drafting pass sends
         -- a whole worklist and can sit thinking for minutes.
         if out.code == 124 then
-          local secs = math.floor((config.timeout_ms or 300000) / 1000)
+          local secs = math.floor((request.timeout_ms or config.timeout_ms or 300000) / 1000)
           callback(
             ("%s timed out after %ds — raise it with setup({ timeout_ms = … }) if the request is a big one"):format(
               cmd[1],

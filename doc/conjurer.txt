@@ -18,10 +18,11 @@ CONTENTS                                                   *conjurer-contents*
  10. Configuration ............................... |conjurer-configuration|
  11. Providers ................................... |conjurer-providers|
  12. Vim idioms .................................. |conjurer-idioms|
- 13. Highlights .................................. |conjurer-highlights|
- 14. Privacy ..................................... |conjurer-privacy|
- 15. Health ...................................... |conjurer-health|
- 16. License ..................................... |conjurer-license|
+ 13. Driving a cast .............................. |conjurer-driving|
+ 14. Highlights .................................. |conjurer-highlights|
+ 15. Privacy ..................................... |conjurer-privacy|
+ 16. Health ...................................... |conjurer-health|
+ 17. License ..................................... |conjurer-license|
 
 ==============================================================================
 1. INTRODUCTION                                        *conjurer-introduction*
@@ -408,6 +409,10 @@ Defaults: >lua
     -- How long one request may run before it is killed. Five minutes suits
     -- a region rewrite; a caller that sends a whole worklist can need more,
     -- and a timeout says so by name rather than as "exit 124".
+    --
+    -- A driver that knows the size of what it is asking for can override
+    -- this for one cast (see |conjurer-driving|); this value is what
+    -- everything else gets.
     timeout_ms = 300000,
 
       -- Adaptive thinking: better transforms, more latency ("anthropic").
@@ -555,7 +560,42 @@ you are typing elsewhere — so the cursor is never moved. Jump to the result
 yourself with `` `[ ``.
 
 ==============================================================================
-13. HIGHLIGHTS                                           *conjurer-highlights*
+13. DRIVING A CAST                                          *conjurer-driving*
+
+A plugin can cast on a region itself rather than waiting for a keymap:
+>lua
+    require("conjurer.operator").conjure_region(buf, region, intent, opts)
+<
+`region` is `{ kind = "line", srow = …, erow = … }` (0-based, end-exclusive)
+or a charwise `{ kind = "char", srow, scol, erow, ecol }`. `intent` is what
+to do. Everything in `opts` is optional:
+
+    on_done(err, result)  Fires once the cast resolves. Passing it also
+                          keeps the review tab shut — a driver is expected
+                          to decide what a result means for itself.
+    note                  A line of context for the model, beyond the
+                          intent (a diagnostic message, say).
+    cwd                   Where the request is ABOUT. A driver naming files
+                          by repo-relative path is describing them relative
+                          to a root, and a provider that reads files has to
+                          be standing in the same place. Unset, the provider
+                          inherits Neovim's.
+    label                 What to call this on screen. The status line shows
+                          the intent's first line, which is right when a
+                          person typed one and wrong when a driver assembled
+                          a page of instructions.
+    timeout_ms            How long THIS cast may run, over `timeout_ms` in
+                          your setup. For a driver that knows the size of
+                          what it asked for: the global value cannot be
+                          right for both a one-line rewrite and a request
+                          that reads a dozen files before answering.
+    shared_context        Text handed to every cast in a batch.
+    exemplar,             Threading for retries and aggregate runs; see
+    previous_attempt,     |conjurer-aggregate|.
+    feedback
+
+==============================================================================
+14. HIGHLIGHTS                                           *conjurer-highlights*
 
                                                           *hl-ConjurerPending*
 ConjurerPending         The locked region while a conjure is in flight.
@@ -569,7 +609,7 @@ The completion flash uses the `flash_hl` config option (default
 |hl-IncSearch|).
 
 ==============================================================================
-14. PRIVACY                                                 *conjurer-privacy*
+15. PRIVACY                                                 *conjurer-privacy*
 
 Every cast sends the targeted snippet, the surrounding context
 (`context_lines` lines each side), the filetype, and your intent to the
@@ -579,14 +619,14 @@ buffers whose content must not leave your machine unless your provider is
 one you control.
 
 ==============================================================================
-15. HEALTH                                                   *conjurer-health*
+16. HEALTH                                                   *conjurer-health*
 
 Run |:checkhealth| conjurer to verify the environment: Neovim version,
 which provider "auto" resolves to, presence of the CLI executable and curl,
 and whether the API key variable is set.
 
 ==============================================================================
-16. LICENSE                                                 *conjurer-license*
+17. LICENSE                                                 *conjurer-license*
 
 MIT. See the LICENSE file in the repository root.
 

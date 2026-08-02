@@ -940,6 +940,9 @@ function M.conjure_region(buf, region, intent, opts)
     -- provider that can read files must be standing in the same place or it
     -- reads none of them and answers about nothing.
     cwd = opts and opts.cwd or nil,
+    -- How long this ONE cast may take, when the caller knows more about the
+    -- size of what it asked for than a global default can.
+    timeout_ms = opts and opts.timeout_ms or nil,
     note = opts and opts.note or nil,
     shared_context = opts and opts.shared_context or nil,
     previous_attempt = opts and opts.previous_attempt or nil,
