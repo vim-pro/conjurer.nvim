@@ -34,12 +34,28 @@ snippet — keep whatever the feedback doesn't ask you to change. Respond
 with the same narrate / <<<RESULT / RESULT shape as any other cast.
 ]]
 
-function M.system(config)
+--- A REQUEST MAY BRING ITS OWN SHAPE. The default framing — context, a
+--- snippet, replace the snippet — is right for rewriting a region and wrong
+--- for a request that is not about a region at all. A driver working at a
+--- coarser grain than the buffer (scry casting across a whole feature's
+--- files) needs to say what it wants in its own terms.
+---
+--- The provider is unchanged either way: it still sends a system part and a
+--- user part and calls back with text.
+---@param config conjurer.Config
+---@param request conjurer.Request?
+function M.system(config, request)
+  if request and request.system and request.system ~= "" then
+    return request.system
+  end
   return config.system_prompt or M.DEFAULT_SYSTEM_PROMPT
 end
 
 ---@param request conjurer.Request
 function M.user(request)
+  if request.user and request.user ~= "" then
+    return request.user
+  end
   local lines = {
     "Filetype: " .. (request.filetype ~= "" and request.filetype or "unknown"),
   }

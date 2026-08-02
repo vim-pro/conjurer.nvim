@@ -19,7 +19,7 @@ function M.request(request, callback)
     model = config.model or "gpt-5.1",
     stream = true,
     messages = {
-      { role = "system", content = prompt.system(config) },
+      { role = "system", content = prompt.system(config, request) },
       { role = "user", content = prompt.user(request) },
     },
   }

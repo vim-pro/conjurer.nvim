@@ -18,7 +18,7 @@ function M.request(request, callback)
   local model = config.model or "gemini-pro-latest"
   local payload = {
     contents = { { parts = { { text = prompt.user(request) } } } },
-    systemInstruction = { parts = { { text = prompt.system(config) } } },
+    systemInstruction = { parts = { { text = prompt.system(config, request) } } },
   }
 
   local sink = prompt.new_sink(request.on_narrate, request.on_result)

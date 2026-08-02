@@ -165,7 +165,7 @@ function M.request(request, callback)
     end
   end
 
-  local input = prompt.system(config) .. "\n\n" .. prompt.user(request)
+  local input = prompt.system(config, request) .. "\n\n" .. prompt.user(request)
 
   local proc = vim.system(cmd, {
     stdin = input,

@@ -19,7 +19,7 @@ function M.request(request, callback)
     model = config.model,
     max_tokens = config.max_tokens,
     stream = true,
-    system = prompt.system(config),
+    system = prompt.system(config, request),
     messages = {
       { role = "user", content = prompt.user(request) },
     },
