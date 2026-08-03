@@ -17,9 +17,12 @@ function H.lines(buf)
   return vim.api.nvim_buf_get_lines(buf or 0, 0, -1, false)
 end
 
+-- Raise, do not exit. os.exit(1) killed the whole Neovim on the first failed
+-- assertion, so every later check in the file went unrun and unreported — and
+-- from outside, a real failure was indistinguishable from a crash. An error is
+-- something a test runner can catch, attribute and carry on from.
 function H.fail(msg)
-  io.stderr:write("FAIL: " .. msg .. "\n" .. vim.inspect(H.lines()) .. "\n")
-  os.exit(1)
+  error(msg .. "\n" .. vim.inspect(H.lines()), 0)
 end
 
 function H.eq(got, want, what)
@@ -46,9 +49,10 @@ function H.pending_marks(buf)
   return vim.api.nvim_buf_get_extmarks(buf or 0, H.ns, 0, -1, {})
 end
 
+-- Kept so no spec needs editing, but it no longer exits: reaching the end of a
+-- spec IS the pass, and the runner is what says so.
 function H.done(msg)
-  print(msg)
-  os.exit(0)
+  return msg
 end
 
 return H

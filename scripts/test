@@ -1,13 +1,30 @@
 #!/bin/sh
 # Run every headless spec: scripts/test [pattern]
-set -u
+#
+# The runner is mini.test — a real framework, Neovim-native, needing neither
+# luarocks nor a rockspec. It is fetched here rather than vendored or demanded
+# of the reader: one shallow clone into tests/.deps, gitignored, reused after
+# the first run. Point MINI_NVIM at your own checkout to skip that.
+#
+# This used to be a shell loop over `nvim -l` per spec, which was fine at
+# starting editors and blind to everything else: the helpers exited the process
+# on the first failed assertion, so the loop could only ever learn that a file
+# had "failed" — never which check, never how many, never whether the rest of
+# that file would have passed.
+set -eu
+
 root="$(cd "$(dirname "$0")/.." && pwd)"
-pattern="${1:-}"
-fail=0
-for spec in "$root"/tests/*_spec.lua; do
-  case "$spec" in *"$pattern"*) ;; *) continue ;; esac
-  printf '== %s\n' "$(basename "$spec")"
-  nvim --headless -u NONE -l "$spec" || fail=1
-  printf '\n'
-done
-exit "$fail"
+mini="${MINI_NVIM:-$root/tests/.deps/mini.nvim}"
+
+if [ ! -d "$mini" ]; then
+  echo "fetching mini.test into $mini"
+  mkdir -p "$(dirname "$mini")"
+  git clone --quiet --depth 1 https://github.com/nvim-mini/mini.nvim "$mini"
+fi
+
+# The pattern reaches tests/runner.lua through the environment, where it filters
+# which specs become cases — so a filtered run is still one run of the real
+# runner, not a different code path.
+SPEC_PATTERN="${1:-}" MINI_NVIM="$mini" \
+  exec nvim --headless --noplugin -u "$root/tests/minimal_init.lua" \
+    -c "lua MiniTest.run()"
