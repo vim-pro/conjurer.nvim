@@ -58,6 +58,17 @@ local function flush_thinking(on_narrate, final)
   end
   while true do
     local at = think_buf:find("[.!?]%s")
+    -- …or a full stop that ENDS what we have so far. A sentence is complete
+    -- when its stop arrives, not when the next sentence starts — and requiring
+    -- the following space meant the last sentence of every thinking block waited
+    -- for content_block_stop. Narration ran a sentence behind through the
+    -- longest, quietest phase of a cast, which is the lag it exists to remove.
+    --
+    -- A digit before the stop is left alone: a delta boundary can land between
+    -- "3." and "14", and "the file has 3." is not a sentence.
+    if not at and think_buf:match("[^%d][.!?]$") then
+      at = #think_buf
+    end
     if not at then
       break
     end
